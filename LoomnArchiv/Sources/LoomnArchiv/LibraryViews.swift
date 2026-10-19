@@ -352,6 +352,8 @@ struct VideoTile: View {
     var record: VideoRecord
     var selected: Bool
     var showSong = true
+    /// Kleine Kachel (Kompagnon): kleinere Schrift, ohne Datum
+    var compact = false
     @State private var hover: CGFloat?
 
     var body: some View {
@@ -379,14 +381,17 @@ struct VideoTile: View {
             }
             .aspectRatio(4 / 5, contentMode: .fit)
             .onChange(of: model.layoutMoving) { _, moving in if moving { hover = nil } }
-            if showSong {
+            if compact {
+                Text(record.songTitle).font(DS.font(14, .bold)).lineLimit(1)
+                Text("\(record.format.name) · \(record.moods.map(\.name).joined(separator: ", "))").font(DS.font(12)).foregroundStyle(DS.dim).lineLimit(1)
+            } else if showSong {
                 Text(record.songTitle).font(DS.font(17, .bold)).lineLimit(1)
                 Text("\(record.format.name) · \(record.moods.map(\.name).joined(separator: ", "))").font(DS.font(14)).foregroundStyle(DS.dim).lineLimit(1)
             } else {
                 Text(record.format.name).font(DS.font(17, .bold)).lineLimit(1)
                 Text(record.moods.map(\.name).joined(separator: ", ")).font(DS.font(14)).foregroundStyle(DS.dim).lineLimit(1)
             }
-            Text(record.createdAt.day).dsLabel()
+            if !compact { Text(record.createdAt.day).dsLabel() }
         }
         .contentShape(Rectangle())
         .onDrag {
