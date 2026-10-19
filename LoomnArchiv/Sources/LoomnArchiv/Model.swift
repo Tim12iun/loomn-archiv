@@ -517,14 +517,14 @@ struct Attrs: Equatable {
     var tags: [String] = []
     var notes: String = ""
 
-    var complete: Bool { kindID != nil && !(songIDs ?? []).isEmpty && formatID != nil && !moodIDs.isEmpty }
+    var complete: Bool { kindID != nil && !(songIDs ?? []).isEmpty && formatID != nil }
+    // Mood ist freiwillig
 
     var missing: [String] {
         var m: [String] = []
         if kindID == nil { m.append("Art") }
         if (songIDs ?? []).isEmpty { m.append("Song") }
         if formatID == nil { m.append("Format") }
-        if moodIDs.isEmpty { m.append("Mood") }
         return m
     }
 
