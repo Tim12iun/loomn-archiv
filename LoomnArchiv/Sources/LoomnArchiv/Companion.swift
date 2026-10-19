@@ -322,14 +322,16 @@ struct CompanionBubble: View {
 
     var body: some View {
         // Orange, damit es auf jedem Hintergrund auffällt
-        ZStack {
-            DS.accent.brightness(hover ? 0.06 : 0)
-            Image(systemName: "pip.fill").font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(DS.bg)
-        }
-        .overlay(BubbleHandle(open: open))
-        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
-        .ignoresSafeArea()
+        // Fläche reicht übers ganze Fenster (auch über den unsichtbaren Titelstreifen),
+        // das Symbol sitzt genau in deren Mitte
+        DS.accent.brightness(hover ? 0.06 : 0)
+            .ignoresSafeArea()
+            .overlay {
+                Image(systemName: "pip.fill").font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(DS.bg)
+            }
+            .overlay(BubbleHandle(open: open))
+            .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .help("Doppelklick zum Aufklappen, ziehen zum Verschieben")
     }
 }
