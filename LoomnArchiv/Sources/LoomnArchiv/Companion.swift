@@ -6,6 +6,7 @@ import SwiftUI
 /// auch wenn das große Fenster zu ist. Hat seine eigene Suche, unabhängig vom großen Fenster.
 struct CompanionView: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var updater: ToolUpdater
     @Environment(\.openWindow) private var openWindow
     @State private var filter = LibraryFilter()
     @State private var songID: String?
@@ -30,7 +31,9 @@ struct CompanionView: View {
         .ignoresSafeArea(edges: .top)
         .background(DS.bg)
         .foregroundStyle(DS.text)
-        .onAppear { model.companionOpen = true; refreshMain() }
+        // Ist das große Fenster weg, zeigt der Kompagnon die Update-Karte
+        .overlay(alignment: .bottom) { if !mainShown { UpdateBanner(compact: true) } }
+        .onAppear { model.companionOpen = true; refreshMain(); if Screenshots.requested == nil { updater.start() } }
         .onDisappear { model.companionOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in

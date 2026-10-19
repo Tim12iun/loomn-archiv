@@ -719,6 +719,7 @@ struct Inspector: View {
     var records: [VideoRecord]
     @State private var draft: [Attrs] = []
     @State private var player: AVPlayer?
+    @State private var ready = false
     @StateObject private var playback = PlaybackState()
     @State private var pendingSave: Task<Void, Never>?
 
@@ -792,14 +793,15 @@ struct Inspector: View {
     private func preview(_ r: VideoRecord) -> some View {
         let url = model.url(r)
         if model.online, let url, FileManager.default.fileExists(atPath: url.path) {
+            let poster = thumbs.image(Previews.posterPath(r.id))
             VStack(spacing: 8) {
                 PlayerView(player: player)
-                    .aspectRatio(CGFloat(r.media?.width ?? 9) / CGFloat(max(r.media?.height ?? 16, 1)), contentMode: .fit)
+                    .aspectRatio(Self.aspect(r, poster: poster), contentMode: .fit)
                     .frame(maxHeight: 420)
-                    // Bis der Player geladen ist, steht das Standbild da (kein schwarzes Feld)
+                    // Bis das erste Bild des Videos da ist, steht das Standbild im selben Format davor
                     .overlay {
-                        if player == nil, let poster = thumbs.image(Previews.posterPath(r.id)) {
-                            Image(nsImage: poster).resizable().scaledToFill()
+                        if !ready, let poster {
+                            Image(nsImage: poster).resizable().aspectRatio(contentMode: .fit)
                         }
                     }
                     .clipShape(DS.shape)
@@ -810,16 +812,35 @@ struct Inspector: View {
             }
             // Player erst nach dem Aufklappen laden, damit die Animation nicht hakt
             .task(id: url) {
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                if !Task.isCancelled {
-                    let p = AVPlayer(url: url)
-                    player = p
-                    playback.attach(p)
+                // Altes Video sofort weg, sonst steht es kurz im Format des neuen
+                if player != nil {
+                    player?.pause()
+                    playback.detach()
+                    player = nil
                 }
+                ready = false
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                let p = AVPlayer(url: url)
+                player = p
+                playback.attach(p)
+                // Standbild erst wegnehmen, wenn das Video wirklich ein Bild zeigen kann
+                for _ in 0..<60 where !Task.isCancelled {
+                    if p.currentItem?.status != .unknown { break }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                if !Task.isCancelled { ready = true }
             }
         } else {
             VideoTile(record: r, selected: false).frame(width: 220)
         }
+    }
+
+    /// Seitenverhältnis der Vorschau: vom Standbild (immer richtig gedreht), sonst aus den Videodaten
+    static func aspect(_ r: VideoRecord, poster: NSImage?) -> CGFloat {
+        if let s = poster?.size, s.width > 0, s.height > 0 { return s.width / s.height }
+        if let w = r.media?.width, let h = r.media?.height, w > 0, h > 0 { return CGFloat(w) / CGFloat(h) }
+        return 16 / 9
     }
 
     private func info(_ r: VideoRecord) -> some View {

@@ -8,7 +8,7 @@ import Foundation
 /// und zwei Dateien: `<Name>.zip` und `version.json`. Zusätzlich liegt die neueste `version.json`
 /// (mit direktem Link auf die ZIP) im festen Release `<tool>-aktuell`: ein einziger Abruf ohne
 /// GitHub-API und ohne deren Abruflimit. Fehlt er, wird wie früher über die API gesucht. Aus welchem Repo, steht in der Info.plist
-/// (`LoomnUpdateRepo`, "besitzer/repo"). Die App schaut beim Start und dann alle 30 Minuten nach,
+/// (`LoomnUpdateRepo`, "besitzer/repo"). Die App schaut beim Start, alle 15 Minuten und beim Zurückholen nach,
 /// zeigt Version und Änderungen an und installiert erst nach Bestätigung: lädt, prüft Prüfsumme
 /// und Signatur, ersetzt sich selbst und startet neu.
 @MainActor
@@ -62,6 +62,7 @@ final class ToolUpdater: ObservableObject {
     let tagPrefix: String
     let repo: String?
     private var timer: Timer?
+    private var activation: NSObjectProtocol?
 
     var displayName: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? name }
     var currentVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
@@ -74,11 +75,23 @@ final class ToolUpdater: ObservableObject {
         repo = (r?.isEmpty ?? true) ? nil : r
     }
 
+    /// Beim Start nachsehen, dann alle 15 Minuten. Läuft die App lange im Hintergrund, bremst macOS
+    /// den Takt; deshalb zusätzlich beim Zurückholen der App, wenn die letzte Suche länger her ist.
+    /// Jede Suche ist ein einziger kleiner Abruf (version.json), kostet also nichts an Leistung.
     func start() {
         guard timer == nil else { return }
         check(manual: false)
-        timer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 15 * 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.check(manual: false) }
+        }
+        t.tolerance = 60
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if Date().timeIntervalSince(self.lastCheck ?? .distantPast) > 5 * 60 { self.check(manual: false) }
+            }
         }
     }
 

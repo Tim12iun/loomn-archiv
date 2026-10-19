@@ -69,6 +69,7 @@ struct LoomnArchivApp: App {
                 .background(FloatingWindow())
                 .environmentObject(model)
                 .environmentObject(model.thumbs)
+                .environmentObject(updater)
                 .frame(minWidth: 320, minHeight: 440)
                 .preferredColorScheme(.dark)
         }

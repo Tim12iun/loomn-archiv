@@ -5,6 +5,8 @@ import SwiftUI
 struct UpdateBanner: View {
     @EnvironmentObject var updater: ToolUpdater
     var inline = false
+    /// Im Kompagnon: so breit wie das Fenster
+    var compact = false
 
     var body: some View {
         switch updater.phase {
@@ -85,12 +87,13 @@ struct UpdateBanner: View {
     private func card<C: View>(@ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8, content: content)
             .padding(DS.margin)
-            .frame(width: inline ? 420 : 360, alignment: .leading)
+            .frame(width: compact ? nil : inline ? 420 : 360, alignment: .leading)
+            .frame(maxWidth: compact ? .infinity : nil, alignment: .leading)
             .foregroundStyle(DS.text)
             .background(DS.surfaceHi, in: DS.shape)
             .overlay(DS.shape.stroke(DS.line, lineWidth: 1))
             .shadow(color: .black.opacity(inline ? 0 : 0.5), radius: 20, y: 8)
-            .padding(inline ? 0 : DS.margin)
-            .padding(.top, inline ? 0 : 18)
+            .padding(inline ? 0 : compact ? 12 : DS.margin)
+            .padding(.top, inline || compact ? 0 : 18)
     }
 }
