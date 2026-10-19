@@ -335,7 +335,8 @@ struct CompanionBubble: View {
                 DS.accent.brightness(hover ? 0.06 : 0)
                 Image(systemName: "pip.fill").font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(DS.bg)
-                    .position(x: g.size.width / 2, y: g.size.height / 2)
+                    // Das Symbol hat links und oben etwas Leerraum, so sitzt die sichtbare Fläche genau mittig
+                    .position(x: g.size.width / 2 + 1.5, y: g.size.height / 2 + 1)
                 if handle { BubbleHandle(open: open) }
             }
         }
