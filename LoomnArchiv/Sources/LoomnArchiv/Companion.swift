@@ -15,12 +15,13 @@ struct CompanionView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            VStack(spacing: 6) {
-                search
+            VStack(spacing: 8) {
+                // Vorschläge der Suche liegen über den Art-Knöpfen
+                search.zIndex(1)
                 kinds
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
             .zIndex(1)
             Rectangle().fill(DS.line).frame(height: 1)
             content
@@ -49,6 +50,7 @@ struct CompanionView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text("KOMPAGNON").font(DS.font(13, .bold)).tracking(1.4).foregroundStyle(DS.dim)
+                .allowsHitTesting(false)
             Spacer()
             // Großes Fenster ein- und ausblenden; orange, solange es zu sehen ist
             Button { toggleMain() } label: {
@@ -61,9 +63,10 @@ struct CompanionView: View {
             .buttonStyle(DSPress())
             .help(mainShown ? "Großes Fenster ausblenden" : "Großes Fenster einblenden")
         }
-        .padding(.leading, 74) // Platz für die Fensterknöpfe
-        .padding(.trailing, 10)
-        .frame(height: 30)
+        .padding(.leading, 86) // Platz für die Fensterknöpfe, mit etwas Luft
+        .padding(.trailing, 12)
+        .frame(height: 38)
+        .background(WindowDragArea())
     }
 
     private func refreshMain() {
@@ -169,7 +172,7 @@ struct CompanionView: View {
                     if on { filter.kindIDs.remove(k.id) } else { filter.kindIDs.insert(k.id) }
                 } label: {
                     Text(k.name).font(DS.font(12, .bold)).tracking(0.8)
-                        .frame(maxWidth: .infinity).frame(height: 24)
+                        .frame(maxWidth: .infinity).frame(height: 28)
                         .foregroundStyle(on ? DS.bg : DS.text)
                         .background(on ? DS.accent : DS.surface, in: DS.shape)
                         .contentShape(DS.shape)
@@ -192,7 +195,7 @@ struct CompanionView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112, maximum: 170), spacing: 8)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112, maximum: 170), spacing: 10)], spacing: 14) {
                     ForEach(items) { r in
                         VideoTile(record: r, selected: false, compact: true)
                             .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } }
@@ -202,7 +205,7 @@ struct CompanionView: View {
                             }
                     }
                 }
-                .padding(10)
+                .padding(12)
             }
         }
     }

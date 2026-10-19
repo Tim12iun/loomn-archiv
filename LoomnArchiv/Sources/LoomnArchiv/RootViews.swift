@@ -11,6 +11,7 @@ struct RootView: View {
         // Immer die eine Oberfläche. Kein eigener Startbildschirm: Der Speicherort wird beim
         // ersten Reinziehen gewählt, Fehler und Laden stehen als Leiste über dem Drop-Feld.
         main
+        .windowGripMargin()
         .overlay(alignment: .topTrailing) {
             if let note = model.inboxNote {
                 HStack(spacing: 8) {
@@ -154,7 +155,8 @@ struct TopBar: View {
     var body: some View {
         HStack(spacing: DS.margin) {
             Text("LOOMN ARCHIV").font(DS.font(26, .bold)).tracking(2)
-                .padding(.leading, 70) // Platz für die Fensterknöpfe
+                .allowsHitTesting(false) // Klicks gehen an die Leiste (verschieben, Doppelklick zoomt)
+                .padding(.leading, 58) // Platz für die Fensterknöpfe
             Spacer()
             SSDStatus()
             CompanionButton()
@@ -168,6 +170,8 @@ struct TopBar: View {
         .padding(.horizontal, DS.margin)
         .padding(.top, 10)
         .padding(.bottom, 10)
+        // Freie Stellen der Leiste: ziehen verschiebt, Doppelklick zoomt
+        .background(WindowDragArea())
         .background(DS.surface.opacity(0.4))
     }
 
