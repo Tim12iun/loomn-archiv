@@ -101,7 +101,9 @@ enum Screenshots {
         for _ in 0..<100 where !model.online { try? await Task.sleep(nanoseconds: 100_000_000) }
         print("Mediathek: \(model.state), \(model.records.count) Videos")
 
-        func shot<V: View>(_ name: String, _ view: V, size: CGSize = CGSize(width: 1440, height: 900), using other: AppModel? = nil) async {
+        /// `realWindow`: Fenster wie in der App (Titelleiste unsichtbar, Inhalt darunter), damit
+        /// Versätze durch den Titelstreifen auch im Bild auffallen
+        func shot<V: View>(_ name: String, _ view: V, size: CGSize = CGSize(width: 1440, height: 900), using other: AppModel? = nil, realWindow: Bool = false) async {
             let m = other ?? model
             let root = view
                 .environmentObject(m)
@@ -113,7 +115,11 @@ enum Screenshots {
                 .preferredColorScheme(.dark)
             let host = NSHostingView(rootView: root)
             host.frame = CGRect(origin: .zero, size: size)
-            let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            let win = NSWindow(contentRect: host.frame, styleMask: realWindow ? [.titled, .fullSizeContentView] : [.titled], backing: .buffered, defer: false)
+            if realWindow {
+                win.titlebarAppearsTransparent = true
+                win.titleVisibility = .hidden
+            }
             win.appearance = NSAppearance(named: .darkAqua)
             win.contentView = host
             win.orderFront(nil)
@@ -152,7 +158,7 @@ enum Screenshots {
         model.page = .all
         await shot("9-zeitraum", MoreFilters().padding(DS.margin), size: CGSize(width: 460, height: 760))
         await shot("9-kompagnon", CompanionView(), size: CGSize(width: 360, height: 640))
-        await shot("9b-kompagnon-eingeklappt", CompanionBubble {}, size: CGSize(width: CompanionFold.size, height: CompanionFold.size))
+        await shot("9b-kompagnon-eingeklappt", CompanionBubble {}, size: CGSize(width: CompanionFold.size, height: CompanionFold.size), realWindow: true)
         await shot("5-einstellungen", SettingsView(), size: CGSize(width: 1080, height: 700))
         await shot("5b-formate", SettingsView(tab: 1), size: CGSize(width: 1080, height: 700))
 
