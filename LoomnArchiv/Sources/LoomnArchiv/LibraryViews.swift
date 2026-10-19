@@ -110,7 +110,7 @@ struct SongSidebar: View {
             .help("Nach Updates suchen")
         }
         .padding([.horizontal, .top], DS.gap)
-        .background(DS.surface.opacity(0.35))
+        .bleed(DS.surface.opacity(0.35), [.leading, .bottom])
         .alert("Song umbenennen", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Titel", text: $newTitle)
             Button("Umbenennen") { rename() }
@@ -175,12 +175,12 @@ struct BrowserView: View {
             .transaction { $0.animation = nil }
             if open {
                 HStack(spacing: 0) {
-                    Rectangle().fill(DS.line).frame(width: 1)
+                    Rectangle().fill(DS.line).frame(width: 1).padding(.bottom, -WindowGrip.width)
                     Inspector(records: model.selected)
                         .frame(width: 400)
                         .id(model.selection)
                 }
-                .background(DS.bg)
+                .bleed(DS.bg, [.trailing, .bottom])
                 .transition(.move(edge: .trailing))
             }
         }
@@ -753,7 +753,7 @@ struct Inspector: View {
                     .padding(DS.margin)
             }
         }
-        .background(DS.surface.opacity(0.35))
+        .bleed(DS.surface.opacity(0.35), [.trailing, .bottom])
         .onAppear { draft = original }
         .onChange(of: draft) { _, _ in scheduleSave() }
         .onDisappear {

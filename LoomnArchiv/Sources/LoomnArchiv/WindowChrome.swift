@@ -55,10 +55,21 @@ struct WindowDragArea: NSViewRepresentable {
     }
 }
 
+enum WindowGrip {
+    /// Breite des Griff-Rands links, rechts und unten
+    static let width: CGFloat = 12
+}
+
 extension View {
+    /// Fläche, die bis an den Fensterrand reicht: die Farbe läuft unter dem Griff-Rand weiter,
+    /// damit der Rand unsichtbar ist. Fängt keine Klicks ab, der Griff darunter bleibt nutzbar.
+    func bleed(_ color: Color, _ edges: Edge.Set) -> some View {
+        background(color.padding(edges, -WindowGrip.width).allowsHitTesting(false))
+    }
+
     /// Schmale Griff-Streifen links, rechts und unten im leeren Rand um die Oberfläche (zum Verschieben,
     /// auch wenn das Fenster halb aus dem Bildschirm ragt). Ganz außen bleibt das normale Größe-Ändern.
-    func windowGripMargin(_ width: CGFloat = 12) -> some View {
+    func windowGripMargin(_ width: CGFloat = WindowGrip.width) -> some View {
         // Die äußersten 4 pt bleiben frei fürs Größe-Ändern, der Streifen liegt knapp innerhalb
         let edge: CGFloat = 4
         return self

@@ -43,7 +43,7 @@ struct RootView: View {
     private var main: some View {
         VStack(spacing: 0) {
             TopBar()
-            Rectangle().fill(DS.line).frame(height: 1)
+            Rectangle().fill(DS.line).frame(height: 1).padding(.horizontal, -WindowGrip.width)
             if case .offline(let vol) = model.state {
                 HStack(spacing: 10) {
                     Image(systemName: "externaldrive.badge.xmark").font(.system(size: 15, weight: .bold))
@@ -81,7 +81,7 @@ struct RootView: View {
             }
             HStack(spacing: 0) {
                 SongSidebar().frame(width: 260)
-                Rectangle().fill(DS.line).frame(width: 1)
+                Rectangle().fill(DS.line).frame(width: 1).padding(.bottom, -WindowGrip.width)
                 BrowserView()
             }
             JobsBar()
@@ -173,7 +173,7 @@ struct TopBar: View {
         // Freie Stellen der Leiste: ziehen verschiebt, Doppelklick zoomt; reicht bis ganz nach oben
         // in den Streifen der Fensterknöpfe (die Knöpfe selbst liegen darüber und bleiben normal)
         .background(WindowDragArea().ignoresSafeArea(edges: .top))
-        .background(DS.surface.opacity(0.4))
+        .bleed(DS.surface.opacity(0.4), .horizontal)
     }
 
 }
@@ -298,7 +298,7 @@ struct JobsBar: View {
                 }
                 .padding(.horizontal, DS.margin)
                 .padding(.vertical, 8)
-                .background(DS.surface)
+                .bleed(DS.surface, [.horizontal, .bottom])
             }
         }
     }
