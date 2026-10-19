@@ -170,8 +170,9 @@ struct TopBar: View {
         .padding(.horizontal, DS.margin)
         .padding(.top, 10)
         .padding(.bottom, 10)
-        // Freie Stellen der Leiste: ziehen verschiebt, Doppelklick zoomt
-        .background(WindowDragArea())
+        // Freie Stellen der Leiste: ziehen verschiebt, Doppelklick zoomt; reicht bis ganz nach oben
+        // in den Streifen der Fensterknöpfe (die Knöpfe selbst liegen darüber und bleiben normal)
+        .background(WindowDragArea().ignoresSafeArea(edges: .top))
         .background(DS.surface.opacity(0.4))
     }
 
