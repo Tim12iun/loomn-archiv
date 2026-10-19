@@ -132,7 +132,7 @@ struct ImportSheet: View {
             return diff.isEmpty ? "" : "Weicht ab: \(diff.joined(separator: ", "))"
         }
         let missing = Set(draft.importable.flatMap(\.attrs.missing))
-        let order = ["Art", "Song", "Format"].filter { missing.contains($0) }
+        let order = ["Art", "Song", "Format", "Mood"].filter { missing.contains($0) }
         return "Noch offen: \(order.joined(separator: ", "))" + (draft.incomplete < draft.importable.count ? " (bei \(draft.incomplete) Videos)" : "")
     }
 

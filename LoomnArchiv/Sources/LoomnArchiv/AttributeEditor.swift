@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Angaben für ein oder mehrere Videos: Art, Song, Format (Pflicht), Mood, Beschreibung, Tags, Notiz.
+/// Angaben für ein oder mehrere Videos: Art, Song, Format, Mood (Pflicht), Beschreibung, Tags, Notiz.
 /// Bei mehreren Videos mit unterschiedlichen Werten zeigt ein orangefarbener Rahmen „gemischt“;
 /// ein Klick setzt den Wert für alle.
 struct AttributeEditor: View {
@@ -78,7 +78,7 @@ struct AttributeEditor: View {
     // MARK: Mood
 
     private var moodBlock: some View {
-        Block(title: "Mood") {
+        Block(title: "Mood", required: true, missing: attrs.contains { $0.moodIDs.isEmpty }) {
             FlowLayout {
                 ForEach(catalog.visibleMoods) { m in
                     let st = state { $0.moodIDs.contains(m.id) }

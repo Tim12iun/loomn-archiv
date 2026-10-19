@@ -161,7 +161,6 @@ enum SelfTest {
         try check(r3.relPath.hasPrefix("Material/2024/2024-12/2024-12-31/"), "Jahreswechsel richtig abgelegt")
         try check(r3.songs.count == 2, "Mehrere Songs pro Video")
         try check(!Attrs(kindID: Kind.raw, songIDs: [], formatID: zoomOut.id, moodIDs: [ruhig.id]).complete, "Song ist Pflicht")
-        try check(Attrs(kindID: Kind.raw, songIDs: a1.songIDs, formatID: zoomOut.id, moodIDs: []).complete, "Mood ist freiwillig")
         try check(a1.complete && !Attrs(kindID: Kind.raw, songIDs: nil, formatID: zoomOut.id, moodIDs: [ruhig.id]).complete,
                   "Pflichtangaben werden geprüft")
 
