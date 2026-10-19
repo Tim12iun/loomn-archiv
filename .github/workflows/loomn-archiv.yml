@@ -1,0 +1,144 @@
+name: Build Loomn Archiv (Mac)
+
+on:
+  push:
+    paths:
+      - "LoomnArchiv/**"
+      - ".github/workflows/loomn-archiv.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Versionen
+        run: xcodebuild -version && swift --version && sw_vers
+
+      # Buildnummer läuft weiter ab 101 (bis Build 53 lag das Archiv im Repo loomn-cam)
+      - name: Buildnummer
+        run: echo "BUILD=$((100 + ${{ github.run_number }}))" >> "$GITHUB_ENV"
+
+      - name: App bauen
+        working-directory: LoomnArchiv
+        env:
+          UPDATE_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          scripts/build-app.sh > build.log 2>&1
+          rc=$?
+          cat build.log
+          # Fehler als Hinweise am Lauf, damit man sie ohne Protokoll-Download sieht
+          grep -E "error:" build.log | sed -E 's#^.*/Sources/LoomnArchiv/##' | sort -u | head -30 | sed 's/^/::error::/'
+          exit $rc
+
+      - name: Selbsttest (Ablage, Begleitdateien, Index, Duplikate, Suche, Umzug)
+        working-directory: LoomnArchiv
+        run: |
+          set +e
+          "build/Loomn Archiv.app/Contents/MacOS/LoomnArchiv" --selftest "$RUNNER_TEMP/selftest" > selftest.log 2>&1
+          rc=$?
+          cat selftest.log
+          [ $rc -ne 0 ] && tail -5 selftest.log | sed 's/^/::error::/'
+          grep -E "^Wellenform" selftest.log | sed 's/^/::notice::/'
+          exit $rc
+
+      - name: Bildschirmfotos der Oberfläche
+        working-directory: LoomnArchiv
+        continue-on-error: true
+        run: |
+          "build/Loomn Archiv.app/Contents/MacOS/LoomnArchiv" --screenshots "$RUNNER_TEMP/shots" > shots.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 120); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          kill $pid 2>/dev/null || true
+          cat shots.log
+          mkdir -p build/Bilder && cp "$RUNNER_TEMP"/shots/Bilder/*.png build/Bilder/ || true
+
+      # Fertige App und Bilder in den Zweig loomn-archiv-app (zum Abholen per git)
+      - name: App in Zweig ablegen
+        working-directory: LoomnArchiv
+        run: |
+          out=$(mktemp -d)
+          cp build/LoomnArchiv.zip "$out/"
+          [ -d build/Bilder ] && cp -R build/Bilder "$out/" || true
+          echo "Build ${BUILD} · ${GITHUB_SHA}" > "$out/BUILD.txt"
+          cd "$out"
+          git init -q -b loomn-archiv-app
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A && git commit -qm "Loomn Archiv Build ${BUILD}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" loomn-archiv-app
+
+      # Update: jede Version als GitHub Release (Tag loomn-archiv-b<Build>) mit LoomnArchiv.zip + version.json,
+      # hier im öffentlichen Repo. Die App holt sich Updates selbst von dort, ohne Claude.
+      - name: Update als Release veröffentlichen
+        if: ${{ !contains(github.event.head_commit.message, '[intern]') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: |
+          prev=$(gh release list -R "$RELEASE_REPO" --limit 50 --json tagName -q '[.[] | select(.tagName | startswith("loomn-archiv-b"))][0].tagName' || true)
+          prevsha=""
+          if [ -n "$prev" ]; then
+            gh release download "$prev" -R "$RELEASE_REPO" -p version.json -O prev.json && prevsha=$(jq -r '.commit // empty' prev.json) || true
+          fi
+          if [ -n "$prevsha" ] && git cat-file -e "$prevsha" 2>/dev/null; then range="$prevsha..HEAD"; else range="-8"; fi
+          notes=$(git log $range --no-merges --format=%s -- LoomnArchiv | { grep -v '\[intern\]' || true; } | sed -E 's/^Loomn Archiv: *//' | awk '!seen[$0]++' | head -12 | jq -R . | jq -s .)
+          mkdir out && cp LoomnArchiv/build/LoomnArchiv.zip out/
+          jq -n --arg v "1.0" --argjson b $BUILD --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                --argjson n "$notes" --arg s "$(shasum -a 256 out/LoomnArchiv.zip | cut -d' ' -f1)" --arg c "$GITHUB_SHA" \
+                '{name:"LoomnArchiv", version:$v, build:$b, date:$d, notes:$n, sha256:$s, file:"LoomnArchiv.zip", commit:$c}' > out/version.json
+          cat out/version.json
+          jq -r '.notes | map("- " + .) | join("\n")' out/version.json > out/notes.md
+          gh release create "loomn-archiv-b${BUILD}" out/LoomnArchiv.zip out/version.json \
+            -R "$RELEASE_REPO" --title "Loomn Archiv 1.0 (Build ${BUILD})" --notes-file out/notes.md \
+            $([ "$RELEASE_REPO" = "$GITHUB_REPOSITORY" ] && echo --target "$GITHUB_SHA")
+          # Fester Kanal „loomn-archiv-aktuell“: nur version.json mit direktem Link auf die ZIP.
+          # Die App fragt dort zuerst nach (ein Abruf, ohne GitHub-API und deren Limit).
+          jq --arg u "https://github.com/$RELEASE_REPO/releases/download/loomn-archiv-b${BUILD}/LoomnArchiv.zip" \
+             '. + {url:$u}' out/version.json > out/channel.json
+          mkdir chan && cp out/channel.json chan/version.json
+          gh release view loomn-archiv-aktuell -R "$RELEASE_REPO" >/dev/null 2>&1 || \
+            gh release create loomn-archiv-aktuell -R "$RELEASE_REPO" --title "Loomn Archiv (aktuell)" \
+              --notes "Zeigt immer auf die neueste Version. Wird bei jedem Build überschrieben." --latest=false \
+              $([ "$RELEASE_REPO" = "$GITHUB_REPOSITORY" ] && echo --target "$GITHUB_SHA")
+          gh release upload loomn-archiv-aktuell chan/version.json -R "$RELEASE_REPO" --clobber
+
+      # Kommt das eben veröffentlichte Update bei der App an und ließe es sich installieren?
+      - name: Update-Test
+        if: ${{ !contains(github.event.head_commit.message, '[intern]') }}
+        working-directory: LoomnArchiv
+        env:
+          LOOMN_UPDATE_TEST_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 12); do
+            "build/Loomn Archiv.app/Contents/MacOS/LoomnArchiv" --updatetest ${BUILD} && exit 0
+            sleep 15
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LoomnArchiv-app
+          path: LoomnArchiv/build/LoomnArchiv.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: loomn-archiv-logs
+          path: |
+            LoomnArchiv/build.log
+            LoomnArchiv/selftest.log
+          retention-days: 7
