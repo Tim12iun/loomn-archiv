@@ -431,21 +431,17 @@ enum CompanionFold {
         animate(w, to: fit(NSRect(x: m.x - size / 2, y: m.y - size / 2, width: size, height: size)), done: done)
     }
 
-    /// Klappt dort auf, wo das Viereck liegt, immer zur Bildschirmmitte hin, in der zuletzt genutzten Größe
+    /// Klappt so auf, dass die Maus oben mittig in der Kopfleiste sitzt (das Fenster hängt unter ihr),
+    /// in der zuletzt genutzten Größe, am Bildschirmrand nach innen versetzt
     static func expand(_ w: NSWindow, done: @escaping () -> Void) {
-        let b = w.frame
         let s = UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString) ?? NSSize(width: 360, height: 640)
-        let v = visible(for: b)
-        let x = b.midX > v.midX ? b.maxX - s.width : b.minX
-        let y = b.midY > v.midY ? b.maxY - s.height : b.minY
-        animate(w, to: fit(NSRect(x: x, y: y, width: s.width, height: s.height))) {
+        let m = NSEvent.mouseLocation
+        let header: CGFloat = 38
+        let r = NSRect(x: m.x - s.width / 2, y: m.y + header / 2 - s.height, width: s.width, height: s.height)
+        animate(w, to: fit(r)) {
             chrome(w, collapsed: false)
             done()
         }
-    }
-
-    private static func visible(for r: NSRect) -> NSRect {
-        (NSScreen.screens.first { $0.frame.contains(NSPoint(x: r.midX, y: r.midY)) } ?? NSScreen.main)?.visibleFrame ?? r
     }
 
     /// Immer ganz auf einem Bildschirm

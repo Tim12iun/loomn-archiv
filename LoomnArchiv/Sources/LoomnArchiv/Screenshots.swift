@@ -109,7 +109,9 @@ enum Screenshots {
                 .environmentObject(m)
                 .environmentObject(m.thumbs)
                 .environmentObject(updater)
-                .frame(width: size.width, height: size.height)
+                // Im echten Fenster bestimmt das Fenster die Größe, nicht der Inhalt (wie in der App)
+                .frame(width: realWindow ? nil : size.width, height: realWindow ? nil : size.height)
+                .frame(minWidth: realWindow ? CompanionFold.size : nil, minHeight: realWindow ? 16 : nil)
                 .background(DS.bg)
                 .foregroundStyle(DS.text)
                 .preferredColorScheme(.dark)
@@ -119,6 +121,7 @@ enum Screenshots {
             if realWindow {
                 win.titlebarAppearsTransparent = true
                 win.titleVisibility = .hidden
+                win.setContentSize(size)
             }
             win.appearance = NSAppearance(named: .darkAqua)
             win.contentView = host
