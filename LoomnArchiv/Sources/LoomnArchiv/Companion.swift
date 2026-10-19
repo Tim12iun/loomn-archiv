@@ -12,6 +12,8 @@ struct CompanionView: View {
     @State private var songID: String?
     @State private var mainShown = true
     @FocusState private var searching: Bool
+    /// Markierter Vorschlag (Maus oder Pfeiltasten), Enter nimmt ihn
+    @State private var marked = 0
     /// Eingeklappt: nur ein kleines Viereck, das man verschieben und per Klick wieder aufklappen kann
     @AppStorage("kompagnon.eingeklappt") private var collapsed = false
 
@@ -163,7 +165,10 @@ struct CompanionView: View {
             TextField(songID == nil ? "Song oder Stichwort …" : "Stichwort …", text: $filter.text)
                 .textFieldStyle(.plain).font(DS.font(15, .semibold))
                 .focused($searching)
-                .onSubmit { if let first = sugg.first { pick(first) } }
+                .onSubmit { if !sugg.isEmpty { pick(sugg[min(marked, sugg.count - 1)]) } }
+                .onKeyPress(.downArrow) { marked = min(marked + 1, max(sugg.count - 1, 0)); return sugg.isEmpty ? .ignored : .handled }
+                .onKeyPress(.upArrow) { marked = max(marked - 1, 0); return sugg.isEmpty ? .ignored : .handled }
+                .onChange(of: filter.text) { _, _ in marked = 0 }
             if !filter.text.isEmpty {
                 Button { filter.text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(DS.dim) }
                     .buttonStyle(.plain)
@@ -176,7 +181,7 @@ struct CompanionView: View {
         .overlay(alignment: .top) {
             if searching, !sugg.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(sugg) { s in
+                    ForEach(Array(sugg.enumerated()), id: \.element.id) { i, s in
                         Button { pick(s) } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "music.note").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.accent)
@@ -186,12 +191,14 @@ struct CompanionView: View {
                             }
                             .padding(.horizontal, 10)
                             .frame(height: 30)
+                            .listRowHover(marked: i == marked)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(DSPress())
+                        .onHover { if $0 { marked = i } }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(4)
                 .background(DS.surfaceHi, in: DS.shape)
                 .overlay(DS.shape.stroke(DS.line, lineWidth: 1))
                 .shadow(color: .black.opacity(0.4), radius: 10, y: 4)

@@ -57,6 +57,24 @@ enum DS {
     }
 }
 
+/// Einzelne Zeile in einer Vorschlags- oder Auswahlliste: unter der Maus (oder per Pfeiltaste
+/// markiert) wird sie leicht dunkel hinterlegt, damit jeder Treffer als eigenes Feld erkennbar ist.
+struct ListRowHover: ViewModifier {
+    /// Von außen markiert (Pfeiltasten); nil = nur Maus
+    var marked: Bool?
+    @State private var hover = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(Color.black.opacity((marked ?? hover) ? 0.32 : 0), in: DS.shape)
+            .onHover { h in withAnimation(.easeOut(duration: 0.1)) { hover = h } }
+    }
+}
+
+extension View {
+    func listRowHover(marked: Bool? = nil) -> some View { modifier(ListRowHover(marked: marked)) }
+}
+
 extension View {
     /// Versalien-Beschriftung mit Sperrung.
     func dsLabel(_ color: Color = DS.dim) -> some View {

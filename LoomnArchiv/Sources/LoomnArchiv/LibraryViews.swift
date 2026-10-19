@@ -146,6 +146,7 @@ struct SongSidebar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, big ? 7 : 5)
             .frame(minHeight: DS.control)
+            .listRowHover()
             .background(active ? DS.accent.opacity(0.14) : Color.clear, in: DS.shape)
             .overlay(alignment: .leading) {
                 if active { Capsule().fill(DS.accent).frame(width: 3).padding(.vertical, 6) }
@@ -620,6 +621,7 @@ struct SongFilterList: View {
             .foregroundStyle(on ? DS.bg : DS.text)
             .padding(.horizontal, 10)
             .frame(height: DS.control)
+            .listRowHover()
             .background(on ? DS.accent : Color.clear, in: DS.shape)
             .contentShape(DS.shape)
         }

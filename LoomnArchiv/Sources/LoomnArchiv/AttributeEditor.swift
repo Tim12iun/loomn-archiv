@@ -332,10 +332,10 @@ struct SongPicker: View {
                 Spacer(minLength: 4)
                 if let icon { Image(systemName: icon).font(.system(size: 13, weight: .bold)) }
             }
-            .foregroundStyle(active ? DS.bg : (accent ? DS.accent : DS.text))
+            .foregroundStyle(accent ? DS.accent : DS.text)
             .padding(.horizontal, 10)
             .frame(height: DS.control)
-            .background(active ? DS.accent : .clear, in: DS.shape)
+            .listRowHover(marked: active)
             .contentShape(DS.shape)
         }
         .buttonStyle(.plain)
