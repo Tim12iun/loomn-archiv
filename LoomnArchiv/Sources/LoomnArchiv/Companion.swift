@@ -192,7 +192,7 @@ struct CompanionView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 160), spacing: 8)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112, maximum: 170), spacing: 8)], spacing: 10) {
                     ForEach(items) { r in
                         VideoTile(record: r, selected: false, compact: true)
                             .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } }

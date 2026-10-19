@@ -133,18 +133,21 @@ struct DSSegment<T: Hashable>: View {
 struct Badge: View {
     var text: String
     var tint: Color?
+    var small = false
 
-    init(_ text: String, tint: Color? = nil) {
+    init(_ text: String, tint: Color? = nil, small: Bool = false) {
         self.text = text
         self.tint = tint
+        self.small = small
     }
 
     var body: some View {
         Text(text)
-            .font(DS.label).tracking(1.4).textCase(.uppercase).monospacedDigit()
+            .font(small ? DS.font(11, .semibold) : DS.label).tracking(small ? 0.6 : 1.4).textCase(.uppercase).monospacedDigit()
+            .lineLimit(1).fixedSize()
             .foregroundStyle(tint == nil ? DS.text : DS.bg)
-            .padding(.horizontal, 8)
-            .frame(height: 22)
+            .padding(.horizontal, small ? 5 : 8)
+            .frame(height: small ? 17 : 22)
             .background(tint ?? DS.surfaceHi, in: RoundedRectangle(cornerRadius: 4))
     }
 }

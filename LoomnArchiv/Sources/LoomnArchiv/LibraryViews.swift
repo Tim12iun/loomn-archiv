@@ -364,11 +364,11 @@ struct VideoTile: View {
                     DS.surface
                     image(size: g.size)
                     HStack(spacing: 4) {
-                        Badge(record.kind.name, tint: record.kind.id == Kind.final ? DS.accent : nil)
-                        Spacer()
-                        if let d = record.media?.duration { Badge(d.clock) }
+                        Badge(record.kind.name, tint: record.kind.id == Kind.final ? DS.accent : nil, small: compact)
+                        Spacer(minLength: 2)
+                        if let d = record.media?.duration { Badge(d.clock, small: compact) }
                     }
-                    .padding(6)
+                    .padding(compact ? 4 : 6)
                 }
                 .clipShape(DS.shape)
                 .overlay(DS.shape.stroke(selected ? DS.accent : DS.line, lineWidth: selected ? 3 : 1))
