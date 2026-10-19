@@ -12,8 +12,44 @@ struct CompanionView: View {
     @State private var songID: String?
     @State private var mainShown = true
     @FocusState private var searching: Bool
+    /// Eingeklappt: nur ein kleines Viereck, das man verschieben und per Klick wieder aufklappen kann
+    @AppStorage("kompagnon.eingeklappt") private var collapsed = false
 
     var body: some View {
+        Group {
+            if collapsed {
+                CompanionBubble { setCollapsed(false) }
+            } else {
+                panel
+            }
+        }
+        .onAppear {
+            model.companionOpen = true
+            refreshMain()
+            if Screenshots.requested == nil { updater.start() }
+            DispatchQueue.main.async { CompanionFold.chrome(WindowFinder.companion, collapsed: collapsed) }
+        }
+        .onDisappear { model.companionOpen = false }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
+            DispatchQueue.main.async { refreshMain() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in refreshMain() }
+    }
+
+    private func setCollapsed(_ on: Bool) {
+        guard let w = WindowFinder.companion else { collapsed = on; return }
+        if on {
+            // Erst den Inhalt tauschen, dann schrumpft das Fenster zum Viereck
+            collapsed = true
+            DispatchQueue.main.async { CompanionFold.collapse(w) }
+        } else {
+            // Erst wachsen, dann erscheint der Inhalt
+            CompanionFold.expand(w) { collapsed = false }
+        }
+    }
+
+    private var panel: some View {
         VStack(spacing: 0) {
             header
             VStack(spacing: 8) {
@@ -33,13 +69,6 @@ struct CompanionView: View {
         .foregroundStyle(DS.text)
         // Ist das große Fenster weg, zeigt der Kompagnon die Update-Karte
         .overlay(alignment: .bottom) { if !mainShown { UpdateBanner(compact: true) } }
-        .onAppear { model.companionOpen = true; refreshMain(); if Screenshots.requested == nil { updater.start() } }
-        .onDisappear { model.companionOpen = false }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
-            DispatchQueue.main.async { refreshMain() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in refreshMain() }
     }
 
     private var list: [VideoRecord] {
@@ -55,6 +84,15 @@ struct CompanionView: View {
             Text("KOMPAGNON").font(DS.font(13, .bold)).tracking(1.4).foregroundStyle(DS.dim)
                 .allowsHitTesting(false)
             Spacer()
+            // Zum kleinen Viereck einklappen
+            Button { setCollapsed(true) } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 11, weight: .bold))
+                    .frame(width: 30, height: 22)
+                    .background(DS.surface, in: DS.shape)
+                    .contentShape(DS.shape)
+            }
+            .buttonStyle(DSPress())
+            .help("Einklappen")
             // Großes Fenster ein- und ausblenden; orange, solange es zu sehen ist
             Button { toggleMain() } label: {
                 Image(systemName: "macwindow").font(.system(size: 12, weight: .semibold))
@@ -266,6 +304,115 @@ struct CompanionButton: View {
         })
         .fixedSize()
         .help("Kleines Fenster, das über allen Apps bleibt (⌘K). Lange drücken holt es hierher zurück.")
+    }
+}
+
+/// Eingeklappter Kompagnon: kleines Viereck. Klick klappt auf, Drücken und Ziehen verschiebt.
+struct CompanionBubble: View {
+    var open: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        // Orange, damit es auf jedem Hintergrund auffällt
+        ZStack {
+            DS.accent.brightness(hover ? 0.06 : 0)
+            Image(systemName: "pip.fill").font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(DS.bg)
+        }
+        .overlay(BubbleHandle(open: open))
+        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
+        .ignoresSafeArea()
+        .help("Klicken zum Aufklappen, ziehen zum Verschieben")
+    }
+}
+
+/// Unterscheidet Klick und Ziehen sauber: erst ab 4 pt Bewegung wird verschoben,
+/// und ein Loslassen nach dem Verschieben öffnet nie.
+private struct BubbleHandle: NSViewRepresentable {
+    var open: () -> Void
+    func makeNSView(context: Context) -> HandleView { HandleView(open: open) }
+    func updateNSView(_ v: HandleView, context: Context) { v.open = open }
+
+    final class HandleView: NSView {
+        var open: () -> Void
+        init(open: @escaping () -> Void) { self.open = open; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { fatalError() }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            let start = NSEvent.mouseLocation
+            let origin = window.frame.origin
+            var moved = false
+            while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                let p = NSEvent.mouseLocation
+                let dx = p.x - start.x, dy = p.y - start.y
+                if !moved, hypot(dx, dy) >= 4 { moved = true }
+                if moved { window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy)) }
+                if e.type == .leftMouseUp { break }
+            }
+            if !moved { open() }
+        }
+    }
+}
+
+/// Fenster zwischen Kompagnon und Viereck umschalten. Beide Positionen merkt sich die App.
+@MainActor
+enum CompanionFold {
+    static let size: CGFloat = 64
+    private static let frameKey = "kompagnon.rahmen"
+    private static let bubbleKey = "kompagnon.viereck"
+
+    /// Fensterknöpfe und Größe-Ändern nur im aufgeklappten Zustand
+    static func chrome(_ w: NSWindow?, collapsed: Bool) {
+        guard let w else { return }
+        for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            w.standardWindowButton(b)?.isHidden = collapsed
+        }
+        if collapsed { w.styleMask.remove(.resizable) } else { w.styleMask.insert(.resizable) }
+    }
+
+    static func collapse(_ w: NSWindow) {
+        let f = w.frame
+        UserDefaults.standard.set(NSStringFromRect(f), forKey: frameKey)
+        // Beim ersten Mal oben rechts an der Stelle des Kompagnons, danach dort, wo es zuletzt lag
+        var origin = NSPoint(x: f.maxX - size, y: f.maxY - size)
+        if let s = UserDefaults.standard.string(forKey: bubbleKey) { origin = NSPointFromString(s) }
+        chrome(w, collapsed: true)
+        animate(w, to: fit(NSRect(origin: origin, size: NSSize(width: size, height: size))))
+    }
+
+    static func expand(_ w: NSWindow, done: @escaping () -> Void) {
+        UserDefaults.standard.set(NSStringFromPoint(w.frame.origin), forKey: bubbleKey)
+        let saved = UserDefaults.standard.string(forKey: frameKey).map(NSRectFromString)
+        var target = saved ?? NSRect(x: w.frame.maxX - 360, y: w.frame.maxY - 640, width: 360, height: 640)
+        target = fit(target)
+        animate(w, to: target) {
+            chrome(w, collapsed: false)
+            done()
+        }
+    }
+
+    /// Immer ganz auf einem Bildschirm
+    private static func fit(_ r: NSRect) -> NSRect {
+        let screen = NSScreen.screens.first { $0.visibleFrame.intersects(r) } ?? NSScreen.main
+        guard let v = screen?.visibleFrame else { return r }
+        var out = r
+        out.size.width = min(r.width, v.width)
+        out.size.height = min(r.height, v.height)
+        out.origin.x = min(max(r.minX, v.minX), v.maxX - out.width)
+        out.origin.y = min(max(r.minY, v.minY), v.maxY - out.height)
+        return out
+    }
+
+    private static func animate(_ w: NSWindow, to r: NSRect, done: (() -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            w.animator().setFrame(r, display: true)
+        } completionHandler: {
+            MainActor.assumeIsolated { done?() }
+        }
     }
 }
 

@@ -152,6 +152,7 @@ enum Screenshots {
         model.page = .all
         await shot("9-zeitraum", MoreFilters().padding(DS.margin), size: CGSize(width: 460, height: 760))
         await shot("9-kompagnon", CompanionView(), size: CGSize(width: 360, height: 640))
+        await shot("9b-kompagnon-eingeklappt", CompanionBubble {}, size: CGSize(width: CompanionFold.size, height: CompanionFold.size))
         await shot("5-einstellungen", SettingsView(), size: CGSize(width: 1080, height: 700))
         await shot("5b-formate", SettingsView(tab: 1), size: CGSize(width: 1080, height: 700))
 

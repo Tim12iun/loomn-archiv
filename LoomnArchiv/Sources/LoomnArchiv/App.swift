@@ -70,7 +70,8 @@ struct LoomnArchivApp: App {
                 .environmentObject(model)
                 .environmentObject(model.thumbs)
                 .environmentObject(updater)
-                .frame(minWidth: 320, minHeight: 440)
+                // Eingeklappt darf das Fenster zum kleinen Viereck werden
+                .frame(minWidth: CompanionFold.size, minHeight: CompanionFold.size)
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
