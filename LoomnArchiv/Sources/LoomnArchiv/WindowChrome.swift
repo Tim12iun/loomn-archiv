@@ -7,13 +7,23 @@ import SwiftUI
 struct WindowDragArea: NSViewRepresentable {
     /// false: nur verschieben (Griff-Streifen am Rand), true: zusätzlich Doppelklick wie Titelleiste
     var titleBar = true
+    /// Eigener Doppelklick statt Zoomen (Kompagnon: einklappen)
+    var onDoubleClick: (() -> Void)?
 
-    func makeNSView(context: Context) -> NSView { DragView(titleBar: titleBar) }
-    func updateNSView(_ v: NSView, context: Context) { (v as? DragView)?.titleBar = titleBar }
+    func makeNSView(context: Context) -> NSView { DragView(titleBar: titleBar, onDoubleClick: onDoubleClick) }
+    func updateNSView(_ v: NSView, context: Context) {
+        (v as? DragView)?.titleBar = titleBar
+        (v as? DragView)?.onDoubleClick = onDoubleClick
+    }
 
     final class DragView: NSView {
         var titleBar: Bool
-        init(titleBar: Bool) { self.titleBar = titleBar; super.init(frame: .zero) }
+        var onDoubleClick: (() -> Void)?
+        init(titleBar: Bool, onDoubleClick: (() -> Void)?) {
+            self.titleBar = titleBar
+            self.onDoubleClick = onDoubleClick
+            super.init(frame: .zero)
+        }
         required init?(coder: NSCoder) { fatalError() }
 
         override var mouseDownCanMoveWindow: Bool { true }
@@ -22,7 +32,7 @@ struct WindowDragArea: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
             if titleBar, event.clickCount == 2 {
-                Self.doubleClick(window)
+                if let onDoubleClick { onDoubleClick() } else { Self.doubleClick(window) }
             } else {
                 window.performDrag(with: event)
             }

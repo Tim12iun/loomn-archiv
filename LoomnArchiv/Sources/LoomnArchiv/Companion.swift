@@ -107,7 +107,8 @@ struct CompanionView: View {
         .padding(.leading, 86) // Platz für die Fensterknöpfe, mit etwas Luft
         .padding(.trailing, 12)
         .frame(height: 38)
-        .background(WindowDragArea())
+        // Doppelklick auf die freie Leiste klappt zum Viereck ein
+        .background(WindowDragArea { setCollapsed(true) })
     }
 
     private func refreshMain() {
@@ -307,7 +308,7 @@ struct CompanionButton: View {
     }
 }
 
-/// Eingeklappter Kompagnon: kleines Viereck. Klick klappt auf, Drücken und Ziehen verschiebt.
+/// Eingeklappter Kompagnon: kleines Viereck. Doppelklick klappt auf, Ziehen verschiebt, einfacher Klick tut nichts.
 struct CompanionBubble: View {
     var open: () -> Void
     @State private var hover = false
@@ -322,12 +323,11 @@ struct CompanionBubble: View {
         .overlay(BubbleHandle(open: open))
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .ignoresSafeArea()
-        .help("Klicken zum Aufklappen, ziehen zum Verschieben")
+        .help("Doppelklick zum Aufklappen, ziehen zum Verschieben")
     }
 }
 
-/// Unterscheidet Klick und Ziehen sauber: erst ab 4 pt Bewegung wird verschoben,
-/// und ein Loslassen nach dem Verschieben öffnet nie.
+/// Ziehen verschiebt, nur ein Doppelklick öffnet: Verschieben wird nie als Öffnen verstanden.
 private struct BubbleHandle: NSViewRepresentable {
     var open: () -> Void
     func makeNSView(context: Context) -> HandleView { HandleView(open: open) }
@@ -341,17 +341,7 @@ private struct BubbleHandle: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
-            let start = NSEvent.mouseLocation
-            let origin = window.frame.origin
-            var moved = false
-            while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-                let p = NSEvent.mouseLocation
-                let dx = p.x - start.x, dy = p.y - start.y
-                if !moved, hypot(dx, dy) >= 4 { moved = true }
-                if moved { window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy)) }
-                if e.type == .leftMouseUp { break }
-            }
-            if !moved { open() }
+            if event.clickCount == 2 { open() } else { window.performDrag(with: event) }
         }
     }
 }
