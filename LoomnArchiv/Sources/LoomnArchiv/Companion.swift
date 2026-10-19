@@ -17,13 +17,16 @@ struct CompanionView: View {
     /// Eingeklappt: nur ein kleines Viereck, das man verschieben und per Klick wieder aufklappen kann
     @AppStorage("kompagnon.eingeklappt") private var collapsed = false
 
+    /// Kompagnon liegt (auch während des Ein- und Aufklappens) unter der orangen Fläche
+    @State private var panelShown = !UserDefaults.standard.bool(forKey: "kompagnon.eingeklappt")
+
     var body: some View {
-        Group {
-            if collapsed {
-                CompanionBubble { setCollapsed(false) }
-            } else {
-                panel
-            }
+        ZStack {
+            if panelShown { panel }
+            // Orange blendet während der Größenänderung weich über bzw. weg, ohne sie zu verlängern
+            CompanionBubble(handle: collapsed) { setCollapsed(false) }
+                .opacity(collapsed ? 1 : 0)
+                .allowsHitTesting(collapsed)
         }
         .onAppear {
             model.companionOpen = true
@@ -40,14 +43,16 @@ struct CompanionView: View {
     }
 
     private func setCollapsed(_ on: Bool) {
-        guard let w = WindowFinder.companion else { collapsed = on; return }
+        guard let w = WindowFinder.companion else { collapsed = on; panelShown = !on; return }
+        let fade = Animation.easeInOut(duration: CompanionFold.duration)
         if on {
-            // Erst den Inhalt tauschen, dann schrumpft das Fenster zum Viereck
-            collapsed = true
-            DispatchQueue.main.async { CompanionFold.collapse(w) }
+            searching = false
+            withAnimation(fade) { collapsed = true }
+            CompanionFold.collapse(w) { if collapsed { panelShown = false } }
         } else {
-            // Erst wachsen, dann erscheint der Inhalt
-            CompanionFold.expand(w) { collapsed = false }
+            panelShown = true
+            withAnimation(fade) { collapsed = false }
+            CompanionFold.expand(w) {}
         }
     }
 
@@ -317,21 +322,25 @@ struct CompanionButton: View {
 
 /// Eingeklappter Kompagnon: kleines Viereck. Doppelklick klappt auf, Ziehen verschiebt, einfacher Klick tut nichts.
 struct CompanionBubble: View {
+    /// Nur eingeklappt: Ziehen und Doppelklick
+    var handle = true
     var open: () -> Void
     @State private var hover = false
 
     var body: some View {
-        // Orange, damit es auf jedem Hintergrund auffällt
-        // Fläche reicht übers ganze Fenster (auch über den unsichtbaren Titelstreifen),
-        // das Symbol sitzt genau in deren Mitte
-        DS.accent.brightness(hover ? 0.06 : 0)
-            .ignoresSafeArea()
-            .overlay {
+        // Über das ganze Fenster, auch über den unsichtbaren Titelstreifen; das Symbol wird
+        // an der echten Fenstermitte platziert, nicht am Inhaltsbereich
+        GeometryReader { g in
+            ZStack {
+                DS.accent.brightness(hover ? 0.06 : 0)
                 Image(systemName: "pip.fill").font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(DS.bg)
+                    .position(x: g.size.width / 2, y: g.size.height / 2)
+                if handle { BubbleHandle(open: open) }
             }
-            .overlay(BubbleHandle(open: open))
-            .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
+        }
+        .ignoresSafeArea()
+        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .help("Doppelklick zum Aufklappen, ziehen zum Verschieben")
     }
 }
@@ -355,12 +364,12 @@ private struct BubbleHandle: NSViewRepresentable {
     }
 }
 
-/// Fenster zwischen Kompagnon und Viereck umschalten. Beide Positionen merkt sich die App.
+/// Fenster zwischen Kompagnon und Viereck umschalten. Die Größe des Kompagnons merkt sich die App.
 @MainActor
 enum CompanionFold {
     static let size: CGFloat = 64
-    private static let frameKey = "kompagnon.rahmen"
-    private static let bubbleKey = "kompagnon.viereck"
+    static let duration = 0.22
+    private static let sizeKey = "kompagnon.groesse"
 
     /// Fensterknöpfe und Größe-Ändern nur im aufgeklappten Zustand
     static func chrome(_ w: NSWindow?, collapsed: Bool) {
@@ -371,25 +380,32 @@ enum CompanionFold {
         if collapsed { w.styleMask.remove(.resizable) } else { w.styleMask.insert(.resizable) }
     }
 
-    static func collapse(_ w: NSWindow) {
+    /// Schrumpft in die Fensterecke, die der nächsten Bildschirmecke am nächsten liegt
+    static func collapse(_ w: NSWindow, done: @escaping () -> Void) {
         let f = w.frame
-        UserDefaults.standard.set(NSStringFromRect(f), forKey: frameKey)
-        // Beim ersten Mal oben rechts an der Stelle des Kompagnons, danach dort, wo es zuletzt lag
-        var origin = NSPoint(x: f.maxX - size, y: f.maxY - size)
-        if let s = UserDefaults.standard.string(forKey: bubbleKey) { origin = NSPointFromString(s) }
+        UserDefaults.standard.set(NSStringFromSize(f.size), forKey: sizeKey)
+        let v = visible(for: f)
+        let x = f.midX > v.midX ? f.maxX - size : f.minX
+        let y = f.midY > v.midY ? f.maxY - size : f.minY
         chrome(w, collapsed: true)
-        animate(w, to: fit(NSRect(origin: origin, size: NSSize(width: size, height: size))))
+        animate(w, to: fit(NSRect(x: x, y: y, width: size, height: size)), done: done)
     }
 
+    /// Klappt dort auf, wo das Viereck liegt, immer zur Bildschirmmitte hin, in der zuletzt genutzten Größe
     static func expand(_ w: NSWindow, done: @escaping () -> Void) {
-        UserDefaults.standard.set(NSStringFromPoint(w.frame.origin), forKey: bubbleKey)
-        let saved = UserDefaults.standard.string(forKey: frameKey).map(NSRectFromString)
-        var target = saved ?? NSRect(x: w.frame.maxX - 360, y: w.frame.maxY - 640, width: 360, height: 640)
-        target = fit(target)
-        animate(w, to: target) {
+        let b = w.frame
+        let s = UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString) ?? NSSize(width: 360, height: 640)
+        let v = visible(for: b)
+        let x = b.midX > v.midX ? b.maxX - s.width : b.minX
+        let y = b.midY > v.midY ? b.maxY - s.height : b.minY
+        animate(w, to: fit(NSRect(x: x, y: y, width: s.width, height: s.height))) {
             chrome(w, collapsed: false)
             done()
         }
+    }
+
+    private static func visible(for r: NSRect) -> NSRect {
+        (NSScreen.screens.first { $0.frame.contains(NSPoint(x: r.midX, y: r.midY)) } ?? NSScreen.main)?.visibleFrame ?? r
     }
 
     /// Immer ganz auf einem Bildschirm
@@ -406,7 +422,7 @@ enum CompanionFold {
 
     private static func animate(_ w: NSWindow, to r: NSRect, done: (() -> Void)? = nil) {
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.22
+            ctx.duration = duration
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             w.animator().setFrame(r, display: true)
         } completionHandler: {
