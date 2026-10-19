@@ -251,10 +251,13 @@ final class ToolUpdater: ObservableObject {
         let pid = ProcessInfo.processInfo.processIdentifier
         let trash = FileManager.default.urls(for: .trashDirectory, in: .userDomainMask).first?.path ?? "/tmp"
         let backup = "\(trash)/\(current.deletingPathExtension().lastPathComponent) alt \(Int(Date().timeIntervalSince1970)).app"
+        // Hat die App einen neuen Namen bekommen, heißt sie danach auch im Ordner so (sofern frei)
+        var dest = current.deletingLastPathComponent().appendingPathComponent(newApp.lastPathComponent)
+        if dest.path != current.path, FileManager.default.fileExists(atPath: dest.path) { dest = current }
         let script = """
         while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
-        mv "\(current.path)" "\(backup)" && mv "\(newApp.path)" "\(current.path)" || mv "\(backup)" "\(current.path)"
-        open "\(current.path)"
+        mv "\(current.path)" "\(backup)" && mv "\(newApp.path)" "\(dest.path)" || mv "\(backup)" "\(current.path)"
+        open "\(dest.path)"
         """
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")

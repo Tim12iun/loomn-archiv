@@ -1,5 +1,5 @@
 #!/bin/bash
-# Baut LoomnArchiv.app (Apple Silicon) nach build/LoomnArchiv.app und packt LoomnArchiv.zip.
+# Baut archivn.app (Apple Silicon) nach build/archivn.app und packt LoomnArchiv.zip (Name der ZIP bleibt fürs Update).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -10,7 +10,7 @@ UPDATE_REPO="${UPDATE_REPO:-}"   # "besitzer/repo" mit öffentlichen Releases, l
 swift build -c release --arch arm64
 BIN="$(swift build -c release --arch arm64 --show-bin-path)/LoomnArchiv"
 
-APP="build/Loomn Archiv.app"
+APP="build/archivn.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/LoomnArchiv"
@@ -33,8 +33,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Loomn Archiv</string>
-  <key>CFBundleDisplayName</key><string>Loomn Archiv</string>
+  <key>CFBundleName</key><string>archivn</string>
+  <key>CFBundleDisplayName</key><string>archivn</string>
   <key>CFBundleIdentifier</key><string>de.loomn.archiv</string>
   <key>CFBundleExecutable</key><string>LoomnArchiv</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -57,5 +57,5 @@ PLIST
 codesign --force --deep --sign - "$APP"
 codesign --verify --verbose "$APP"
 
-(cd build && rm -f LoomnArchiv.zip && ditto -c -k --keepParent "Loomn Archiv.app" LoomnArchiv.zip)
+(cd build && rm -f LoomnArchiv.zip && ditto -c -k --keepParent "archivn.app" LoomnArchiv.zip)
 echo "Fertig: $APP"

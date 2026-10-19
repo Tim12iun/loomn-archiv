@@ -18,7 +18,7 @@ struct LoomnArchivApp: App {
     }
 
     var body: some Scene {
-        Window("Loomn Archiv", id: "main") {
+        Window("archivn", id: "main") {
             RootView()
                 .environmentObject(model)
                 .environmentObject(model.thumbs)

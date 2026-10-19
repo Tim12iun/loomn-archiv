@@ -333,16 +333,36 @@ struct CompanionBubble: View {
         GeometryReader { g in
             ZStack {
                 DS.accent.brightness(hover ? 0.06 : 0)
-                Image(systemName: "pip.fill").font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(DS.bg)
-                    // Das Symbol hat links und oben etwas Leerraum, so sitzt die sichtbare Fläche genau mittig
-                    .position(x: g.size.width / 2 + 1.5, y: g.size.height / 2 + 1)
+                StackMark(unit: g.size.width * 0.0075)
+                    .position(x: g.size.width / 2, y: g.size.height / 2)
                 if handle { BubbleHandle(open: open) }
             }
         }
         .ignoresSafeArea()
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
         .help("Doppelklick zum Aufklappen, ziehen zum Verschieben")
+    }
+}
+
+/// Zeichen von archivn: drei Balken, nach vorn größer (Design Language, Abschnitt 7), auf Orange in `bg`.
+/// Gezeichnet statt Bild: bleibt scharf und sitzt exakt mittig (Raster 100 × 100, Inhalt 20…80 / 22…78).
+struct StackMark: View {
+    var unit: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            bar(x: 30, y: 22, w: 40, h: 11, r: 3, o: 0.4)
+            bar(x: 25, y: 37, w: 50, h: 13, r: 3.5, o: 0.7)
+            bar(x: 20, y: 54, w: 60, h: 24, r: 5, o: 1)
+        }
+        .frame(width: 100 * unit, height: 100 * unit, alignment: .topLeading)
+    }
+
+    private func bar(x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, r: CGFloat, o: Double) -> some View {
+        RoundedRectangle(cornerRadius: r * unit, style: .continuous)
+            .fill(DS.bg.opacity(o))
+            .frame(width: w * unit, height: h * unit)
+            .offset(x: x * unit, y: y * unit)
     }
 }
 
@@ -381,15 +401,12 @@ enum CompanionFold {
         if collapsed { w.styleMask.remove(.resizable) } else { w.styleMask.insert(.resizable) }
     }
 
-    /// Schrumpft in die Fensterecke, die der nächsten Bildschirmecke am nächsten liegt
+    /// Schrumpft genau unter den Mauszeiger (mittig), am Bildschirmrand nach innen versetzt
     static func collapse(_ w: NSWindow, done: @escaping () -> Void) {
-        let f = w.frame
-        UserDefaults.standard.set(NSStringFromSize(f.size), forKey: sizeKey)
-        let v = visible(for: f)
-        let x = f.midX > v.midX ? f.maxX - size : f.minX
-        let y = f.midY > v.midY ? f.maxY - size : f.minY
+        UserDefaults.standard.set(NSStringFromSize(w.frame.size), forKey: sizeKey)
+        let m = NSEvent.mouseLocation
         chrome(w, collapsed: true)
-        animate(w, to: fit(NSRect(x: x, y: y, width: size, height: size)), done: done)
+        animate(w, to: fit(NSRect(x: m.x - size / 2, y: m.y - size / 2, width: size, height: size)), done: done)
     }
 
     /// Klappt dort auf, wo das Viereck liegt, immer zur Bildschirmmitte hin, in der zuletzt genutzten Größe

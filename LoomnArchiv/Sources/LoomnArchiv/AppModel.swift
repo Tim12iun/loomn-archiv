@@ -225,7 +225,7 @@ final class AppModel: ObservableObject {
     /// ein Loomn Archiv (z. B. auf der SSD vom alten Mac), wird es geöffnet, sonst dort angelegt.
     func chooseStorage(then urls: [URL] = []) {
         guard let url = chooseFolder(prompt: "Hier speichern",
-                                     message: "Wo soll dein Archiv liegen? Am besten auf der externen SSD. Liegt dort schon ein Loomn Archiv, wird es einfach geöffnet.")
+                                     message: "Wo soll dein Archiv liegen? Am besten auf der externen SSD. Liegt dort schon ein Archiv, wird es einfach geöffnet.")
         else { return }
         pendingImport = urls
         if let existing = Locator.libraries(under: url, depth: 2).first {

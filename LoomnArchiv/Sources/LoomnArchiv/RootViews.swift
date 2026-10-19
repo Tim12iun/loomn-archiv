@@ -30,7 +30,7 @@ struct RootView: View {
         .animation(.smooth(duration: 0.3), value: model.inboxNote)
         .background(DS.bg)
         .foregroundStyle(DS.text)
-        .alert("Loomn Archiv", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .alert("archivn", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK") { model.message = nil }
         } message: {
             Text(model.message ?? "")
@@ -154,7 +154,7 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: DS.margin) {
-            Text("LOOMN ARCHIV").font(DS.font(26, .bold)).tracking(2)
+            Text("archivn").font(DS.font(28, .bold)).tracking(0.5)
                 .allowsHitTesting(false) // Klicks gehen an die Leiste (verschieben, Doppelklick zoomt)
                 .padding(.leading, 58) // Platz für die Fensterknöpfe
             Spacer()

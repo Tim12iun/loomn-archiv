@@ -1,4 +1,4 @@
-name: Build Loomn Archiv (Mac)
+name: Build archivn (Mac)
 
 on:
   push:
@@ -47,7 +47,7 @@ jobs:
         working-directory: LoomnArchiv
         run: |
           set +e
-          "build/Loomn Archiv.app/Contents/MacOS/LoomnArchiv" --selftest "$RUNNER_TEMP/selftest" > selftest.log 2>&1
+          "build/archivn.app/Contents/MacOS/LoomnArchiv" --selftest "$RUNNER_TEMP/selftest" > selftest.log 2>&1
           rc=$?
           cat selftest.log
           [ $rc -ne 0 ] && tail -5 selftest.log | sed 's/^/::error::/'
@@ -58,7 +58,7 @@ jobs:
         working-directory: LoomnArchiv
         continue-on-error: true
         run: |
-          "build/Loomn Archiv.app/Contents/MacOS/LoomnArchiv" --screenshots "$RUNNER_TEMP/shots" > shots.log 2>&1 &
+          "build/archivn.app/Contents/MacOS/LoomnArchiv" --screenshots "$RUNNER_TEMP/shots" > shots.log 2>&1 &
           pid=$!
           for i in $(seq 1 120); do kill -0 $pid 2>/dev/null || break; sleep 1; done
           kill $pid 2>/dev/null || true
@@ -94,7 +94,7 @@ jobs:
             gh release download "$prev" -R "$RELEASE_REPO" -p version.json -O prev.json && prevsha=$(jq -r '.commit // empty' prev.json) || true
           fi
           if [ -n "$prevsha" ] && git cat-file -e "$prevsha" 2>/dev/null; then range="$prevsha..HEAD"; else range="-8"; fi
-          notes=$(git log $range --no-merges --format=%s -- LoomnArchiv | { grep -v '\[intern\]' || true; } | sed -E 's/^Loomn Archiv: *//' | awk '!seen[$0]++' | head -12 | jq -R . | jq -s .)
+          notes=$(git log $range --no-merges --format=%s -- LoomnArchiv | { grep -v '\[intern\]' || true; } | sed -E 's/^(Loomn Archiv|archivn): *//' | awk '!seen[$0]++' | head -12 | jq -R . | jq -s .)
           mkdir out && cp LoomnArchiv/build/LoomnArchiv.zip out/
           jq -n --arg v "1.0" --argjson b $BUILD --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                 --argjson n "$notes" --arg s "$(shasum -a 256 out/LoomnArchiv.zip | cut -d' ' -f1)" --arg c "$GITHUB_SHA" \
@@ -102,7 +102,7 @@ jobs:
           cat out/version.json
           jq -r '.notes | map("- " + .) | join("\n")' out/version.json > out/notes.md
           gh release create "loomn-archiv-b${BUILD}" out/LoomnArchiv.zip out/version.json \
-            -R "$RELEASE_REPO" --title "Loomn Archiv 1.0 (Build ${BUILD})" --notes-file out/notes.md \
+            -R "$RELEASE_REPO" --title "archivn 1.0 (Build ${BUILD})" --notes-file out/notes.md \
             $([ "$RELEASE_REPO" = "$GITHUB_REPOSITORY" ] && echo --target "$GITHUB_SHA")
           # Fester Kanal „loomn-archiv-aktuell“: nur version.json mit direktem Link auf die ZIP.
           # Die App fragt dort zuerst nach (ein Abruf, ohne GitHub-API und deren Limit).
@@ -110,7 +110,7 @@ jobs:
              '. + {url:$u}' out/version.json > out/channel.json
           mkdir chan && cp out/channel.json chan/version.json
           gh release view loomn-archiv-aktuell -R "$RELEASE_REPO" >/dev/null 2>&1 || \
-            gh release create loomn-archiv-aktuell -R "$RELEASE_REPO" --title "Loomn Archiv (aktuell)" \
+            gh release create loomn-archiv-aktuell -R "$RELEASE_REPO" --title "archivn (aktuell)" \
               --notes "Zeigt immer auf die neueste Version. Wird bei jedem Build überschrieben." --latest=false \
               $([ "$RELEASE_REPO" = "$GITHUB_REPOSITORY" ] && echo --target "$GITHUB_SHA")
           gh release upload loomn-archiv-aktuell chan/version.json -R "$RELEASE_REPO" --clobber
@@ -123,7 +123,7 @@ jobs:
           LOOMN_UPDATE_TEST_TOKEN: ${{ github.token }}
         run: |
           for i in $(seq 1 12); do
-            "build/Loomn Archiv.app/Contents/MacOS/LoomnArchiv" --updatetest ${BUILD} && exit 0
+            "build/archivn.app/Contents/MacOS/LoomnArchiv" --updatetest ${BUILD} && exit 0
             sleep 15
           done
           exit 1
