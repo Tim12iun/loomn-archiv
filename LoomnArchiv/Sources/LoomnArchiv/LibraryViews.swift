@@ -710,6 +710,7 @@ struct MoreFilters: View {
 
 struct Inspector: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var thumbs: ThumbStore
     var records: [VideoRecord]
     @State private var draft: [Attrs] = []
     @State private var player: AVPlayer?
