@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 @main
 struct LoomnArchivApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model: AppModel
     @StateObject private var updater: ToolUpdater
 
@@ -70,13 +72,33 @@ struct LoomnArchivApp: App {
                 .environmentObject(model)
                 .environmentObject(model.thumbs)
                 .environmentObject(updater)
-                // Eingeklappt darf das Fenster zum kleinen Viereck werden
-                .frame(minWidth: CompanionFold.size, minHeight: CompanionFold.size)
+                // Eingeklappt darf das Fenster zum kleinen Viereck werden. Die Höhe zählt hier ohne den
+                // unsichtbaren Titelstreifen, deshalb kleiner, sonst wird das Viereck hochkant
+                .frame(minWidth: CompanionFold.size, minHeight: 16)
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 360, height: 640)
         .defaultPosition(.bottomTrailing)
+    }
+}
+
+/// Klick aufs Symbol im Dock holt das große Fenster zurück, auch wenn nur der Kompagnon offen ist.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor static var showMain: (() -> Void)?
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        MainActor.assumeIsolated {
+            if let w = WindowFinder.main, w.isVisible, !w.isMiniaturized { return }
+            if let show = Self.showMain {
+                show()
+            } else if let w = WindowFinder.main {
+                w.deminiaturize(nil)
+                w.makeKeyAndOrderFront(nil)
+            }
+        }
+        // Ohne sichtbare Fenster öffnet SwiftUI das Hauptfenster selbst
+        return !hasVisibleWindows
     }
 }

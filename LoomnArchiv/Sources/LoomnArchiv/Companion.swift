@@ -15,10 +15,11 @@ struct CompanionView: View {
     /// Markierter Vorschlag (Maus oder Pfeiltasten), Enter nimmt ihn
     @State private var marked = 0
     /// Eingeklappt: nur ein kleines Viereck, das man verschieben und per Klick wieder aufklappen kann
-    @AppStorage("kompagnon.eingeklappt") private var collapsed = false
+    /// Bewusst nicht gespeichert: nach Neustart oder erneutem Öffnen kommt immer der ganze Kompagnon
+    @State private var collapsed = false
 
     /// Kompagnon liegt (auch während des Ein- und Aufklappens) unter der orangen Fläche
-    @State private var panelShown = !UserDefaults.standard.bool(forKey: "kompagnon.eingeklappt")
+    @State private var panelShown = true
 
     var body: some View {
         ZStack {
@@ -32,7 +33,9 @@ struct CompanionView: View {
             model.companionOpen = true
             refreshMain()
             if Screenshots.requested == nil { updater.start() }
-            DispatchQueue.main.async { CompanionFold.chrome(WindowFinder.companion, collapsed: collapsed) }
+            // War er beim letzten Mal als Viereck zu, wieder in normaler Größe öffnen
+            DispatchQueue.main.async { CompanionFold.restore(WindowFinder.companion) }
+            AppDelegate.showMain = { showMain() }
         }
         .onDisappear { model.companionOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
@@ -128,11 +131,16 @@ struct CompanionView: View {
             w.orderOut(nil)
             mainShown = false
         } else {
-            openWindow(id: "main")
-            WindowFinder.main?.deminiaturize(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            mainShown = true
+            showMain()
         }
+    }
+
+    private func showMain() {
+        openWindow(id: "main")
+        WindowFinder.main?.deminiaturize(nil)
+        WindowFinder.main?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        mainShown = true
     }
 
     // MARK: Suche: Freitext und Songs in einem Feld
@@ -330,6 +338,8 @@ struct CompanionBubble: View {
     var body: some View {
         // Über das ganze Fenster, auch über den unsichtbaren Titelstreifen; das Symbol wird
         // an der echten Fenstermitte platziert, nicht am Inhaltsbereich
+        // Auch der Inhalt im GeometryReader muss den Titelstreifen ignorieren, sonst rutscht
+        // das Zeichen um dessen halbe Höhe nach unten
         GeometryReader { g in
             ZStack {
                 DS.accent.brightness(hover ? 0.06 : 0)
@@ -337,6 +347,8 @@ struct CompanionBubble: View {
                     .position(x: g.size.width / 2, y: g.size.height / 2)
                 if handle { BubbleHandle(open: open) }
             }
+            .frame(width: g.size.width, height: g.size.height)
+            .ignoresSafeArea()
         }
         .ignoresSafeArea()
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
@@ -399,6 +411,16 @@ enum CompanionFold {
             w.standardWindowButton(b)?.isHidden = collapsed
         }
         if collapsed { w.styleMask.remove(.resizable) } else { w.styleMask.insert(.resizable) }
+    }
+
+    /// Normaler Kompagnon: Fensterknöpfe zeigen, und ein zu kleines Fenster (vom Viereck) auf die letzte Größe bringen
+    static func restore(_ w: NSWindow?) {
+        guard let w else { return }
+        chrome(w, collapsed: false)
+        guard w.frame.width < 200 || w.frame.height < 200 else { return }
+        let s = UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString) ?? NSSize(width: 360, height: 640)
+        let f = w.frame
+        w.setFrame(fit(NSRect(x: f.midX - s.width / 2, y: f.maxY - s.height, width: s.width, height: s.height)), display: true)
     }
 
     /// Schrumpft genau unter den Mauszeiger (mittig), am Bildschirmrand nach innen versetzt
