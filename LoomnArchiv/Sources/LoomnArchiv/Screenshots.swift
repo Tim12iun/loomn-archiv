@@ -201,6 +201,24 @@ enum Screenshots {
         let fresh = AppModel()
         await shot("7-erster-start", RootView(), using: fresh)
         print(titleBarFailed ? "FEHLER Titelleiste: siehe oben" : "Titelleiste OK")
+
+        // Angedockt muss das orange Viereck (Griff zum Lösen) immer über dem Kompagnon liegen, auch wenn der
+        // Kompagnon angeklickt nach vorn kommt (Fehler bis Build 142: Viereck verdeckt, kein Lösen mehr)
+        let parent = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        parent.orderFront(nil)
+        let grip = DockHandle()
+        let f = parent.frame
+        let platz = LoomnAndocken.Platz(tool: "test", prozess: 1, fenster: 1, bereich: .init(f),
+                                        ziel: .init(NSRect(x: f.maxX - 40, y: f.maxY - 40, width: 24, height: 24)),
+                                        sichtbar: true, vorn: true, ecken: 8)
+        grip.show(platz, above: parent)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        parent.orderFrontRegardless()
+        parent.makeKey()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        print(grip.isAttached(to: parent) ? "Griff OK" : "FEHLER Griff: Viereck liegt nicht über dem Kompagnon")
+        grip.hide()
+        parent.orderOut(nil)
         print("BILDER OK")
         exit(0)
     }

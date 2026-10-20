@@ -259,17 +259,30 @@ final class DockHandle {
         if flash { (win.contentView as? HandleView)?.flash() }
     }
 
+    /// Das Viereck hängt als Kindfenster am Kompagnon: Es liegt immer über ihm, auch wenn der Kompagnon
+    /// angeklickt nach vorn kommt, und wird mit ihm aus- und eingeblendet.
     func follow(_ p: LoomnAndocken.Platz, above w: NSWindow) {
         guard let win = window else { return }
-        guard p.sichtbar else { if win.isVisible { win.orderOut(nil) }; return }
         let r = CompanionDock.handleRect(p)
         if win.frame != r { win.setFrame(r, display: true) }
-        win.level = w.level
-        if w.isVisible { win.order(.above, relativeTo: w.windowNumber) }
+        if win.parent !== w {
+            win.parent?.removeChildWindow(win)
+            w.addChildWindow(win, ordered: .above)
+        }
+        guard p.sichtbar, w.isVisible else { return }
+        if !win.isVisible { win.orderFront(nil) }
     }
 
     func hide() {
-        window?.orderOut(nil)
+        guard let win = window else { return }
+        win.parent?.removeChildWindow(win)
+        win.orderOut(nil)
+    }
+
+    /// Für den Test: liegt das Viereck über dem Kompagnon und hängt an ihm?
+    func isAttached(to w: NSWindow) -> Bool {
+        guard let win = window else { return false }
+        return win.parent === w && win.isVisible && win.orderedIndex < w.orderedIndex
     }
 
     private func make() -> NSWindow {

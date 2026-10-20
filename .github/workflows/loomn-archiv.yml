@@ -81,12 +81,12 @@ jobs:
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" loomn-archiv-app
 
       # Rückfall-Schutz: graue macOS-Titelleiste im Kompagnon (siehe Screenshots.swift, checkTitleBar)
-      - name: Titelleiste prüfen
+      - name: Titelleiste und Andock-Griff prüfen
         working-directory: LoomnArchiv
         run: |
-          grep -E "^(FEHLER )?Titelleiste" shots.log || true
-          if grep -q "^FEHLER Titelleiste" shots.log; then
-            grep "^FEHLER Titelleiste" shots.log | sed 's/^/::error::/'
+          grep -E "^(FEHLER )?(Titelleiste|Griff)" shots.log || true
+          if grep -qE "^FEHLER (Titelleiste|Griff)" shots.log; then
+            grep -E "^FEHLER (Titelleiste|Griff)" shots.log | sed 's/^/::error::/'
             exit 1
           fi
 
