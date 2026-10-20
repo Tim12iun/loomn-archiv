@@ -241,12 +241,24 @@ struct CompanionView: View {
                 headerButtons
             }
         }
-        // Platz für die Fensterknöpfe, mit etwas Luft; angedockt gibt es keine
-        .padding(.leading, dock.docked == nil ? 86 : 12)
-        .padding(.trailing, 12)
+        // Platz für die Fensterknöpfe, mit etwas Luft; angedockt gibt es keine.
+        // Liegt das Ziel des Tools im Bereich, bleibt dort Platz für das orange Viereck (Griff zum Lösen).
+        .padding(.leading, dock.docked == nil ? 86 : 12 + targetGap.leading)
+        .padding(.trailing, 12 + targetGap.trailing)
         .frame(height: 38)
+        .padding(.top, targetGap.top)
         // Doppelklick auf die freie Leiste klappt zum Viereck ein
         .background(WindowDragArea { setCollapsed(true) })
+    }
+
+    /// Angedockt mit dem Ziel im Bereich: Abstand der Kopfleiste, damit sie neben dem Viereck liegt
+    private var targetGap: (leading: CGFloat, trailing: CGFloat, top: CGFloat) {
+        guard let p = dock.docked else { return (0, 0, 0) }
+        let b = p.bereich.rect, z = p.ziel.rect
+        guard b.contains(z) else { return (0, 0, 0) }
+        let top = max(0, b.maxY - z.midY - 19)
+        if z.midX > b.midX { return (0, b.maxX - z.minX - 4, top) }
+        return (z.maxX - b.minX - 4, 0, top)
     }
 
     @ViewBuilder
