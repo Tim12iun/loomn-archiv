@@ -277,19 +277,41 @@ struct RenameField: View {
 struct TagList: View {
     @EnvironmentObject var model: AppModel
 
+    /// Alle hinterlegten Tags: aus der Liste und von den Videos (falls einer dort noch fehlt)
+    static func all(_ catalog: Catalog, _ records: [VideoRecord]) -> [String] {
+        var out = catalog.tags
+        for t in records.flatMap(\.tags) where !out.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) {
+            out.append(t)
+        }
+        return out
+    }
+
     var body: some View {
         let counts = Dictionary(grouping: model.records.flatMap(\.tags), by: { $0.lowercased() }).mapValues(\.count)
+        let tags = Self.all(model.catalog, model.records)
         Text("Tags").font(DS.big)
-        FlowLayout {
-            ForEach(model.catalog.tags, id: \.self) { t in
-                HStack(spacing: 0) {
-                    Chip(title: "\(t) · \(counts[t.lowercased()] ?? 0)") {
+        if tags.isEmpty {
+            Text("Noch keine Tags. Lege hier einen an oder tippe ihn in der Vorschau eines Videos ein.")
+                .font(DS.font(16)).foregroundStyle(DS.dim)
+        }
+        VStack(spacing: 6) {
+            ForEach(tags, id: \.self) { t in
+                HStack(spacing: DS.gap) {
+                    RenameField(value: t, placeholder: "Tag") { new in model.renameTag(t, to: new) }
+                    // Klick auf die Zahl zeigt die Videos mit diesem Tag
+                    Button {
                         model.page = .all; model.filter = LibraryFilter(); model.filter.tags = [t]; model.showSettings = false
+                    } label: {
+                        Text("\(counts[t.lowercased()] ?? 0) Videos").dsLabel().frame(width: 90, alignment: .trailing)
                     }
+                    .buttonStyle(DSPress())
+                    .help("Videos mit diesem Tag zeigen")
                     deleteButton { confirmDelete(name: t, entry: .tag(t), what: "", options: [], model: model) }
                 }
+                .padding(.horizontal, 4)
             }
         }
+        AddInline(placeholder: "Neuer Tag") { model.newTag($0) }
     }
 }
 

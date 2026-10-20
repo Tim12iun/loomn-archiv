@@ -14,15 +14,15 @@ struct RootView: View {
         main
         .windowGripMargin()
         .onAppear {
-            AppDelegate.openCompanion = { CompanionFold.open(openWindow) }
+            AppDelegate.openCompanion = { CompanionFold.open(openWindow, byUser: false) }
             // Von einem Tool nur für den Kompagnon gestartet: großes Fenster bleibt zu
             if AppDelegate.onlyCompanion {
                 AppDelegate.onlyCompanion = false
                 AppDelegate.mainWanted = false
                 WindowFinder.main?.orderOut(nil)
-                if WindowFinder.companion?.isVisible != true { CompanionFold.open(openWindow) }
+                if WindowFinder.companion?.isVisible != true { CompanionFold.open(openWindow, byUser: false) }
             } else if CompanionDock.shared.hasRequest, WindowFinder.companion?.isVisible != true {
-                CompanionFold.open(openWindow)
+                CompanionFold.open(openWindow, byUser: false)
             }
         }
         .overlay(alignment: .topTrailing) {

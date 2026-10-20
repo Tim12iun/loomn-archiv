@@ -358,6 +358,38 @@ final class AppModel: ObservableObject {
         return item ?? catalog.moods.first { $0.name.caseInsensitiveCompare(t) == .orderedSame }
     }
 
+    // MARK: - Tags
+
+    /// Neuen Tag anlegen (Einstellungen → Tags); steht danach oben in den Vorschlägen
+    func newTag(_ name: String) {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        updateCatalog { $0.noteTags([t]) }
+    }
+
+    /// Tag umbenennen, auch an allen Videos. Gibt es den neuen Namen schon, werden beide zusammengelegt.
+    func renameTag(_ old: String, to new: String) {
+        let n = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, n != old else { return }
+        let same = { (a: String, b: String) in a.caseInsensitiveCompare(b) == .orderedSame }
+        var changed: [VideoRecord] = []
+        for r in usage(.tag(old)) {
+            var c = r
+            c.tags = c.tags.map { same($0, old) ? n : $0 }
+            var seen: [String] = []
+            for t in c.tags where !seen.contains(where: { same($0, t) }) { seen.append(t) }
+            c.tags = seen
+            if c != r { changed.append(c) }
+        }
+        updateCatalog { c in
+            if let i = c.tags.firstIndex(where: { same($0, old) }) {
+                if c.tags.contains(where: { same($0, n) && !same($0, old) }) { c.tags.remove(at: i) } else { c.tags[i] = n }
+            }
+        }
+        if !changed.isEmpty { save(changed) }
+        if filter.tags.contains(old) { filter.tags.remove(old); filter.tags.insert(n) }
+    }
+
     // MARK: - Einträge löschen (statt ausblenden)
 
     enum Entry { case format(String), mood(String), song(String), tag(String) }
@@ -521,6 +553,9 @@ final class AppModel: ObservableObject {
     /// Angaben mehrerer Videos speichern.
     func save(_ changed: [VideoRecord]) {
         guard let library else { needSSD(); return }
+        // Neue Tags (z. B. in der Vorschau eingetippt) kommen auch in die Tag-Liste der Einstellungen
+        let fresh = changed.flatMap(\.tags).filter { t in !catalog.tags.contains { $0.caseInsensitiveCompare(t) == .orderedSame } }
+        if !fresh.isEmpty { updateCatalog { $0.noteTags(fresh) } }
         Task {
             do {
                 let saved = try await library.update(changed)

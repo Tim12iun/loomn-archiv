@@ -140,6 +140,12 @@ enum SelfTest {
         guard case .imported(let r1) = try await Importer.importFile(v1, sha: nil, attrs: a1, into: lib) else { throw Fail("Import 1") }
         try check(r1.relPath.hasPrefix("Material/2025/2025-03/2025-03-07/"), "Ablage nach Entstehungstag aus Metadaten (\(r1.relPath))")
         try check(r1.createdAtSource == "metadata", "Entstehungsdatum aus den Video-Metadaten")
+        var tagCat = cat
+        tagCat.tags = []
+        tagCat.noteTags(["Sommer"])
+        var tagRec = r1
+        tagRec.tags = ["Bühne", "sommer"]
+        try check(TagList.all(tagCat, [tagRec]) == ["Sommer", "Bühne"], "Tags-Seite zeigt angelegte und an Videos hinterlegte Tags")
         try check(r1.file.hasPrefix("2025-03-07_") && r1.file.contains("_RAW_Test-Song-Nacht_") && r1.file.hasSuffix(".mov"),
                   "Dateiname Datum_Uhrzeit_Art_Song_ID (\(r1.file))")
         let side1 = Sidecar.url(forVideo: lib.paths.url(r1.relPath))

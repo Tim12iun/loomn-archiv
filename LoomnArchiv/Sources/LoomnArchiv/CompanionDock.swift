@@ -160,7 +160,7 @@ final class CompanionDock: ObservableObject {
         arrange(w, p, force: true)
     }
 
-    /// Lösen geht nur über das orange Viereck (Klick oder Herausziehen) oder durch Beenden von archivn
+    /// Lösen über das orange Viereck (Klick oder Herausziehen); außerdem `releaseByApp` und Beenden von archivn
     private func release(_ w: NSWindow, to target: NSRect, keepHandle: Bool = false) {
         guard let p = docked, !settling else { return }
         AppDelegate.quiet()
@@ -169,6 +169,28 @@ final class CompanionDock: ObservableObject {
         onRelease?(target) { [weak self] in
             self?.handle.hide()
             self?.verzeichnis?.melde(LoomnAndocken.geloest, an: p)
+        }
+        undock(w)
+    }
+
+    /// In archivn selbst gerufen oder ausgeblendet: das hat Vorrang, der Kompagnon löst sich
+    /// (neben Klick aufs Viereck, Herausziehen und Beenden von archivn). Mit Animation wird er ins Viereck
+    /// oben rechts gesogen; `geloest` geht danach ans Tool, dann `done`.
+    func releaseByApp(animated: Bool, _ done: @escaping () -> Void) {
+        guard let p = docked, let w = WindowFinder.companion else { done(); return }
+        AppDelegate.quiet()
+        autoDock = nil
+        settling = false
+        handle.hide()
+        guard animated, let onRelease else {
+            undock(w)
+            verzeichnis?.melde(LoomnAndocken.geloest, an: p)
+            done()
+            return
+        }
+        onRelease(CompanionFold.corner(near: p.bereich.rect)) { [weak self] in
+            self?.verzeichnis?.melde(LoomnAndocken.geloest, an: p)
+            done()
         }
         undock(w)
     }

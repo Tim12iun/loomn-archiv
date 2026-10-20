@@ -56,7 +56,7 @@ struct CompanionView: View {
             reopen()
         }
         // Wieder eingeblendet (Knopf oben rechts oder Menü): immer ausgeklappt
-        .onReceive(NotificationCenter.default.publisher(for: CompanionFold.opened)) { _ in reopen() }
+        .onReceive(NotificationCenter.default.publisher(for: CompanionFold.opened)) { n in reopen(byUser: n.object as? Bool ?? false) }
         .onDisappear { model.companionOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
@@ -66,12 +66,35 @@ struct CompanionView: View {
     }
 
     /// Aufgeklappt in normaler Größe, egal in welchem Zustand er zugemacht wurde
-    private func reopen() {
-        if dock.docked != nil { WindowFinder.companion?.orderFrontRegardless(); return }
+    private func reopen(byUser: Bool = false) {
+        if dock.docked != nil {
+            if byUser { callOutOfDock() } else { WindowFinder.companion?.orderFrontRegardless() }
+            return
+        }
         collapsed = false
         fullMin = true
         // Nicht, wenn inzwischen angedockt wird (z. B. auf Bitte eines Tools gleich nach dem Öffnen)
         DispatchQueue.main.async { if dock.docked == nil { CompanionFold.restore(WindowFinder.companion) } }
+    }
+
+    /// In archivn gerufen, während er angedockt ist: löst sich (Einsaugen ins Viereck oben rechts) und
+    /// klappt dort auf, über allem. War er angedockt gerade unsichtbar, ohne Einsaugen.
+    private func callOutOfDock() {
+        guard let w = WindowFinder.companion else { return }
+        let shown = w.isVisible
+        dock.releaseByApp(animated: shown) {
+            if !shown {
+                fullMin = false
+                collapsed = true
+                searching = false
+                CompanionFold.chrome(w, collapsed: true)
+                w.contentMinSize = NSSize(width: CompanionFold.size, height: 16)
+                w.alphaValue = 1
+                w.setFrame(CompanionFold.corner(near: w.frame), display: true)
+                w.orderFrontRegardless()
+            }
+            DispatchQueue.main.async { setCollapsed(false) }
+        }
     }
 
     /// Ein- und Aufklappen: Das echte Fenster springt unsichtbar auf die neue Größe, sichtbar ist
@@ -208,10 +231,7 @@ struct CompanionView: View {
         searching = false
         CompanionFold.chrome(w, collapsed: true)
         w.contentMinSize = NSSize(width: CompanionFold.size, height: 16)
-        let s = CompanionFold.size
-        let screen = NSScreen.screens.first { $0.frame.intersects(near ?? w.frame) } ?? NSScreen.main
-        let v = screen?.visibleFrame ?? w.frame
-        let r = NSRect(x: v.maxX - s - 16, y: v.maxY - s - 16, width: s, height: s)
+        let r = CompanionFold.corner(near: near ?? w.frame)
         DispatchQueue.main.async {
             w.alphaValue = 1
             w.setFrame(r, display: true)
@@ -487,7 +507,14 @@ struct CompanionButton: View {
         Button {
             // Nach langem Drücken nicht zusätzlich schließen
             if longPressed { longPressed = false; return }
-            if on { dismissWindow(id: "kompagnon") } else { CompanionFold.open(openWindow) }
+            // Angedockt, aber gerade unsichtbar (z. B. editn verdeckt): Klick ruft ihn heraus
+            let hiddenDocked = CompanionDock.shared.docked != nil && WindowFinder.companion?.isVisible != true
+            if on && !hiddenDocked {
+                // Ausblenden löst ihn auch aus dem Andocken (Aktionen in archivn haben Vorrang)
+                CompanionDock.shared.releaseByApp(animated: false) { dismissWindow(id: "kompagnon") }
+            } else {
+                CompanionFold.open(openWindow)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "pip").font(.system(size: 15, weight: .semibold))
@@ -502,6 +529,8 @@ struct CompanionButton: View {
         .buttonStyle(DSPress())
         .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in
             longPressed = true
+            // Angedockt: herausrufen (löst sich und klappt oben rechts auf), nicht verschieben
+            if CompanionDock.shared.docked != nil { CompanionFold.open(openWindow); return }
             if !on { CompanionFold.open(openWindow) }
             DispatchQueue.main.asyncAfter(deadline: .now() + (on ? 0 : 0.3)) { WindowFinder.recallCompanion() }
         })
@@ -607,10 +636,18 @@ enum CompanionFold {
     }
     private static let sizeKey = "kompagnon.groesse2" // neuer Name: alte gemerkte Größen gelten nicht mehr
 
-    /// Kompagnon einblenden, immer ausgeklappt
-    static func open(_ openWindow: OpenWindowAction) {
+    /// Kompagnon einblenden, immer ausgeklappt. `byUser`: aus archivn selbst gerufen (Knopf, Menü);
+    /// das hat Vorrang vor dem Andocken und löst ihn. Auf Bitte eines Tools (`false`) bleibt er angedockt.
+    static func open(_ openWindow: OpenWindowAction, byUser: Bool = true) {
         openWindow(id: "kompagnon")
-        DispatchQueue.main.async { NotificationCenter.default.post(name: opened, object: nil) }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: opened, object: byUser) }
+    }
+
+    /// Freies Viereck oben rechts auf dem Bildschirm, auf dem `near` liegt
+    static func corner(near: NSRect) -> NSRect {
+        let screen = NSScreen.screens.first { $0.frame.intersects(near) } ?? NSScreen.main
+        let v = screen?.visibleFrame ?? near
+        return NSRect(x: v.maxX - size - 16, y: v.maxY - size - 16, width: size, height: size)
     }
 
     /// Fensterknöpfe und Größe-Ändern nur im aufgeklappten Zustand
