@@ -23,9 +23,18 @@ struct CompanionView: View {
     /// Mindestgröße des aufgeklappten Kompagnons gilt erst, wenn er fertig aufgeklappt ist
     @State private var fullMin = true
 
+    /// Während des Auf- und Zuklappens behält der Inhalt seine volle Größe (wird nur angeschnitten),
+    /// statt bei jedem Schritt neu umzubrechen: das hält die Animation flüssig
+    @State private var frozen: CGSize?
+
     var body: some View {
-        ZStack {
-            if panelShown { panel }
+        ZStack(alignment: .topLeading) {
+            if panelShown {
+                panel
+                    .frame(width: frozen?.width, height: frozen?.height, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .clipped()
+            }
             // Orange blendet während der Größenänderung weich über bzw. weg, ohne sie zu verlängern
             CompanionBubble(handle: collapsed) { setCollapsed(false) }
                 .opacity(collapsed ? 1 : 0)
@@ -37,10 +46,11 @@ struct CompanionView: View {
             model.companionOpen = true
             refreshMain()
             if Screenshots.requested == nil { updater.start() }
-            // War er beim letzten Mal als Viereck zu, wieder in normaler Größe öffnen
-            DispatchQueue.main.async { CompanionFold.restore(WindowFinder.companion) }
             AppDelegate.showMain = { showMain() }
+            reopen()
         }
+        // Wieder eingeblendet (Knopf oben rechts, ⌘K): immer ausgeklappt
+        .onReceive(NotificationCenter.default.publisher(for: CompanionFold.opened)) { _ in reopen() }
         .onDisappear { model.companionOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in
@@ -49,18 +59,35 @@ struct CompanionView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in refreshMain() }
     }
 
+    /// Aufgeklappt in normaler Größe, egal in welchem Zustand er zugemacht wurde
+    private func reopen() {
+        collapsed = false
+        panelShown = true
+        fullMin = true
+        frozen = nil
+        DispatchQueue.main.async { CompanionFold.restore(WindowFinder.companion) }
+    }
+
     private func setCollapsed(_ on: Bool) {
         guard let w = WindowFinder.companion else { collapsed = on; panelShown = !on; return }
         let fade = Animation.easeInOut(duration: CompanionFold.duration)
+        // Inhaltsfläche ohne den unsichtbaren Titelstreifen
+        let strip = w.frame.height - w.contentLayoutRect.height
         if on {
             searching = false
             fullMin = false
+            frozen = w.contentLayoutRect.size
             withAnimation(fade) { collapsed = true }
-            CompanionFold.collapse(w) { if collapsed { panelShown = false } }
+            CompanionFold.collapse(w) { if collapsed { panelShown = false; frozen = nil } }
         } else {
+            let target = CompanionFold.expandTarget(w)
+            frozen = CGSize(width: target.width, height: target.height - strip)
             panelShown = true
             withAnimation(fade) { collapsed = false }
-            CompanionFold.expand(w) { fullMin = true }
+            CompanionFold.expand(w, to: target) {
+                fullMin = true
+                frozen = nil
+            }
         }
     }
 
@@ -252,6 +279,7 @@ struct CompanionView: View {
                     if on { filter.kindIDs.remove(k.id) } else { filter.kindIDs.insert(k.id) }
                 } label: {
                     Text(k.name).font(DS.font(12, .bold)).tracking(0.8)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                         .frame(maxWidth: .infinity).frame(height: 28)
                         .foregroundStyle(on ? DS.bg : DS.text)
                         .background(on ? DS.accent : DS.surface, in: DS.shape)
@@ -323,7 +351,7 @@ struct CompanionButton: View {
         Button {
             // Nach langem Drücken nicht zusätzlich schließen
             if longPressed { longPressed = false; return }
-            if on { dismissWindow(id: "kompagnon") } else { openWindow(id: "kompagnon") }
+            if on { dismissWindow(id: "kompagnon") } else { CompanionFold.open(openWindow) }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "pip").font(.system(size: 15, weight: .semibold))
@@ -338,7 +366,7 @@ struct CompanionButton: View {
         .buttonStyle(DSPress())
         .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in
             longPressed = true
-            if !on { openWindow(id: "kompagnon") }
+            if !on { CompanionFold.open(openWindow) }
             DispatchQueue.main.asyncAfter(deadline: .now() + (on ? 0 : 0.3)) { WindowFinder.recallCompanion() }
         })
         .fixedSize()
@@ -422,7 +450,22 @@ enum CompanionFold {
     static let duration = 0.22
     /// Kleinste Größe des aufgeklappten Kompagnons
     static let minSize = CGSize(width: 178, height: 300)
+    /// Standardgröße: drei Videos nebeneinander
+    static let defaultSize = CGSize(width: 390, height: 640)
+    /// Wird nach dem Öffnen des Kompagnon-Fensters gesendet
+    static let opened = Notification.Name("kompagnon.geoeffnet")
+
+    static var lastSize: NSSize {
+        UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString)
+            .flatMap { $0.width >= minSize.width && $0.height >= minSize.height ? $0 : nil } ?? defaultSize
+    }
     private static let sizeKey = "kompagnon.groesse"
+
+    /// Kompagnon einblenden, immer ausgeklappt
+    static func open(_ openWindow: OpenWindowAction) {
+        openWindow(id: "kompagnon")
+        DispatchQueue.main.async { NotificationCenter.default.post(name: opened, object: nil) }
+    }
 
     /// Fensterknöpfe und Größe-Ändern nur im aufgeklappten Zustand
     static func chrome(_ w: NSWindow?, collapsed: Bool) {
@@ -438,7 +481,7 @@ enum CompanionFold {
         guard let w else { return }
         chrome(w, collapsed: false)
         guard w.frame.width < minSize.width || w.frame.height < minSize.height else { return }
-        let s = UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString) ?? NSSize(width: 360, height: 640)
+        let s = lastSize
         let f = w.frame
         w.setFrame(fit(NSRect(x: f.midX - s.width / 2, y: f.maxY - s.height, width: s.width, height: s.height)), display: true)
     }
@@ -453,12 +496,15 @@ enum CompanionFold {
 
     /// Klappt so auf, dass die Maus oben mittig in der Kopfleiste sitzt (das Fenster hängt unter ihr),
     /// in der zuletzt genutzten Größe, am Bildschirmrand nach innen versetzt
-    static func expand(_ w: NSWindow, done: @escaping () -> Void) {
-        let s = UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString) ?? NSSize(width: 360, height: 640)
+    static func expandTarget(_ w: NSWindow) -> NSRect {
+        let s = lastSize
         let m = NSEvent.mouseLocation
         let header: CGFloat = 38
-        let r = NSRect(x: m.x - s.width / 2, y: m.y + header / 2 - s.height, width: s.width, height: s.height)
-        animate(w, to: fit(r)) {
+        return fit(NSRect(x: m.x - s.width / 2, y: m.y + header / 2 - s.height, width: s.width, height: s.height))
+    }
+
+    static func expand(_ w: NSWindow, to r: NSRect, done: @escaping () -> Void) {
+        animate(w, to: r) {
             chrome(w, collapsed: false)
             done()
         }
@@ -491,7 +537,7 @@ enum CompanionFold {
 struct CompanionMenuItem: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Button("Kompagnon") { openWindow(id: "kompagnon") }.keyboardShortcut("k")
+        Button("Kompagnon") { CompanionFold.open(openWindow) }.keyboardShortcut("k")
     }
 }
 

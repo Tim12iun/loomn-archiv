@@ -79,7 +79,7 @@ struct LoomnArchivApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 360, height: 640)
+        .defaultSize(width: CompanionFold.defaultSize.width, height: CompanionFold.defaultSize.height)
         .defaultPosition(.bottomTrailing)
     }
 }
