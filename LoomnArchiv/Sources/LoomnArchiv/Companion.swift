@@ -115,6 +115,26 @@ struct CompanionView: View {
     /// Erst danach meldet `dockFinished` dem Tool `angedockt`.
     private func dockOnto(_ p: LoomnAndocken.Platz) {
         guard let w = WindowFinder.companion else { dock.dockFinished(); return }
+        let target = p.bereich.rect
+        // Aufgeklappt hingezogen: Inhalt wird orange, fließt in den Bereich, Inhalt blendet wieder ein
+        if !collapsed {
+            let morph = CompanionMorph(from: w.frame, snapshot: CompanionMorph.snapshot(w), orange: 0, mark: 0)
+            w.alphaValue = 0
+            searching = false
+            fullMin = false
+            morph.step(orange: 1, duration: 0.12) {
+                dock.applyDocked(w)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { morph.setSnapshot(CompanionMorph.snapshot(w)) }
+                morph.step(frame: target, radius: CGFloat(p.ecken), duration: 0.35, curve: .spring(bounce: 0.18)) {
+                    morph.step(orange: 0, duration: 0.2) {
+                        w.alphaValue = 1
+                        morph.finish()
+                        dock.dockFinished()
+                    }
+                }
+            }
+            return
+        }
         let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1, mark: 1)
         w.alphaValue = 0
         collapsed = false
@@ -123,7 +143,6 @@ struct CompanionView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             morph.setSnapshot(CompanionMorph.snapshot(w))
         }
-        let target = p.bereich.rect
         let zr = min(p.ziel.rect.width, p.ziel.rect.height) * 0.22
         morph.step(frame: p.ziel.rect, mark: 0, radius: zr, duration: 0.12, curve: .easeOut) {
             morph.step(frame: target, radius: CGFloat(p.ecken), duration: 0.35, curve: .spring(bounce: 0.18)) {
@@ -418,11 +437,13 @@ struct CompanionView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                // Feste Kachelgröße: beim Ändern der Fenstergröße ändert sich nur die Zahl der Spalten
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 128, maximum: 128), spacing: 10, alignment: .top)], spacing: 14) {
+                // Feste Kachelgröße: beim Ändern der Fenstergröße ändert sich nur die Zahl der Spalten.
+                // Linksbündig und knapp, damit angedockt in schmalen Leisten möglichst viele Spalten passen.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.tile, maximum: Self.tile), spacing: 8, alignment: .top)],
+                          alignment: .leading, spacing: 14) {
                     ForEach(items) { r in
                         VideoTile(record: r, selected: false, compact: true)
-                            .frame(width: 128)
+                            .frame(width: Self.tile)
                             .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } }
                             .contextMenu {
                                 Button("Öffnen") { model.openVideo(r) }
@@ -430,10 +451,15 @@ struct CompanionView: View {
                             }
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
+
+    /// Kachelbreite im Kompagnon (zwei passen nebeneinander in 268 pt)
+    static let tile: CGFloat = 120
 }
 
 /// Gewählter Song im Kompagnon: anhören, Version wählen und als Audiodatei in andere Apps ziehen

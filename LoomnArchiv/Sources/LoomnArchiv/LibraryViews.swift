@@ -214,6 +214,7 @@ struct SongPage: View {
         let list = model.pageRecords
         let c = model.catalog
         let song: SongItem? = { if case .song(let id) = model.page { return c.song(id) }; return nil }()
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -250,6 +251,18 @@ struct SongPage: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
+        }
+        // Zielfernrohr in der Vorschau: zum Video scrollen
+        .onChange(of: model.revealID) { _, id in scrollTo(id, proxy) }
+        .onAppear { scrollTo(model.revealID, proxy) }
+        }
+    }
+
+    private func scrollTo(_ id: String?, _ proxy: ScrollViewProxy) {
+        guard let id else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }
+            model.revealID = nil
         }
     }
 
@@ -340,6 +353,7 @@ struct SongPage: View {
 
     private func tile(_ r: VideoRecord, in list: [VideoRecord]) -> some View {
         VideoTile(record: r, selected: model.marked(r), showSong: false)
+            .id(r.id)
             // Ein Klick wählt sofort (ohne auf einen Doppelklick zu warten), der zweite öffnet
             .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } else { model.select(r, in: list) } }
             .contextMenu {
@@ -381,7 +395,8 @@ struct VideoTile: View {
                     .padding(compact ? 4 : 6)
                 }
                 .clipShape(DS.shape)
-                .overlay(DS.shape.stroke(selected ? DS.accent : DS.line, lineWidth: selected ? 3 : 1))
+                // Rand innen: nichts ragt über die Kachel hinaus (sonst schneidet die Reihe ihn oben und seitlich ab)
+                .overlay(DS.shape.strokeBorder(selected ? DS.accent : DS.line, lineWidth: selected ? 3 : 1))
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let p): hover = model.layoutMoving ? nil : min(max(p.x / max(g.size.width, 1), 0), 0.999)
@@ -876,6 +891,15 @@ struct Inspector: View {
             HStack(spacing: DS.gap) {
                 DragOutButton(url: model.url(r))
                 DSButton("Im Finder", icon: "folder") { model.showInFinder(r) }
+                // Zeigt das Video in der Mitte, dort wo es jetzt liegt (z. B. nach Songwechsel)
+                Button { model.reveal(r) } label: {
+                    Image(systemName: "scope").font(.system(size: 16, weight: .semibold))
+                        .frame(width: DS.control, height: DS.control)
+                        .background(DS.surface, in: DS.shape)
+                        .contentShape(DS.shape)
+                }
+                .buttonStyle(DSPress())
+                .help("In der Mitte zeigen")
             }
             .padding(.top, 6)
         }

@@ -471,6 +471,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Video in der Mitte zeigen: Song-Seite, in der es jetzt liegt, Filter weg, hinscrollen, Kachel markiert
+    @Published var revealID: String?
+    func reveal(_ r: VideoRecord) {
+        let now = records.first { $0.id == r.id } ?? r
+        page = now.songs.first.map { .song($0.id) } ?? .noSong
+        filter = LibraryFilter()
+        collecting = false
+        selection = [r.id]
+        revealID = nil
+        DispatchQueue.main.async { self.revealID = r.id }
+    }
+
     func showSong(of r: VideoRecord) {
         page = r.songs.first.map { .song($0.id) } ?? .noSong
     }

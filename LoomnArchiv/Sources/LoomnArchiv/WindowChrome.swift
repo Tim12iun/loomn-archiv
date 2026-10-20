@@ -51,11 +51,20 @@ struct WindowDragArea: NSViewRepresentable {
             let start = NSEvent.mouseLocation
             let origin = window.frame.origin
             var p = start
+            let dock = CompanionDock.shared
+            // Freier, aufgeklappter Kompagnon lässt sich auch direkt andocken (Mauszeiger aufs Ziel)
+            let canDock = window === WindowFinder.companion && !dock.isDocked(window)
+            if canDock { dock.bubbleDragBegan(at: origin) }
             while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
                 p = NSEvent.mouseLocation
                 window.setFrameOrigin(NSPoint(x: origin.x + p.x - start.x, y: origin.y + p.y - start.y))
+                if canDock {
+                    let s = CompanionFold.size
+                    dock.bubbleMoved(frame: NSRect(x: p.x - s / 2, y: p.y - s / 2, width: s, height: s))
+                }
                 if e.type == .leftMouseUp { break }
             }
+            if canDock { _ = dock.bubbleDropped() }
             // Angedockter Kompagnon: weit genug rausgezogen löst ihn, sonst springt er zurück
             if CompanionDock.shared.isDocked(window) {
                 CompanionDock.shared.headerDragEnded(window, distance: hypot(p.x - start.x, p.y - start.y))
