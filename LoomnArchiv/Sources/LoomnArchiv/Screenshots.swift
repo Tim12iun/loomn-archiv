@@ -207,9 +207,9 @@ enum Screenshots {
         let parent = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
         parent.orderFront(nil)
         let grip = DockHandle()
-        let f = parent.frame
-        let platz = LoomnAndocken.Platz(tool: "test", prozess: 1, fenster: 1, bereich: .init(f),
-                                        ziel: .init(NSRect(x: f.maxX - 40, y: f.maxY - 40, width: 24, height: 24)),
+        let pf = parent.frame
+        let platz = LoomnAndocken.Platz(tool: "test", prozess: 1, fenster: 1, bereich: .init(pf),
+                                        ziel: .init(NSRect(x: pf.maxX - 40, y: pf.maxY - 40, width: 24, height: 24)),
                                         sichtbar: true, vorn: true, ecken: 8)
         grip.show(platz, above: parent)
         try? await Task.sleep(nanoseconds: 300_000_000)
