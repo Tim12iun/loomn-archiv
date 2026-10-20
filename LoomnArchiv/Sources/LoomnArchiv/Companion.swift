@@ -182,15 +182,21 @@ struct CompanionView: View {
     }
 
     /// Tool-Fenster zu oder Tool beendet: wieder das freie Viereck an seiner letzten freien Stelle
-    private func backToBubble(_ origin: NSPoint?) {
+    /// Andockstelle weg (Projekt verlassen, Tool-Fenster zu, Tool beendet): wieder das freie Viereck,
+    /// oben rechts auf dem Bildschirm des Tools. Nur zu kleines Tool-Fenster löst nicht (bleibt angedockt, unsichtbar).
+    private func backToBubble(_ near: NSRect?) {
         guard let w = WindowFinder.companion else { return }
         fullMin = false
         collapsed = true
+        searching = false
         CompanionFold.chrome(w, collapsed: true)
         w.contentMinSize = NSSize(width: CompanionFold.size, height: 16)
-        let o = origin ?? NSPoint(x: w.frame.midX - CompanionFold.size / 2, y: w.frame.midY - CompanionFold.size / 2)
-        let r = CompanionFold.fitted(NSRect(x: o.x, y: o.y, width: CompanionFold.size, height: CompanionFold.size))
+        let s = CompanionFold.size
+        let screen = NSScreen.screens.first { $0.frame.intersects(near ?? w.frame) } ?? NSScreen.main
+        let v = screen?.visibleFrame ?? w.frame
+        let r = NSRect(x: v.maxX - s - 16, y: v.maxY - s - 16, width: s, height: s)
         DispatchQueue.main.async {
+            w.alphaValue = 1
             w.setFrame(r, display: true)
             CompanionFold.chrome(w, collapsed: true)
             w.orderFrontRegardless()

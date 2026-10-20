@@ -20,7 +20,7 @@ final class CompanionDock: ObservableObject {
     /// (danach den Abschluss aufrufen) bzw. ohne Animation wieder zum Viereck werden
     var onDock: ((LoomnAndocken.Platz) -> Void)?
     var onRelease: ((NSRect, @escaping () -> Void) -> Void)?
-    var onGone: ((NSPoint?) -> Void)?
+    var onGone: ((NSRect?) -> Void)?
 
     private var verzeichnis: LoomnAndocken.Verzeichnis?
     /// Ziel, das das gezogene Viereck gerade berührt
@@ -29,8 +29,6 @@ final class CompanionDock: ObservableObject {
     private var near: LoomnAndocken.Platz?
     private var sentNaehe: Double?
     private var sentState: String?
-    /// Wo das Viereck frei lag, bevor es angedockt wurde
-    private var freeOrigin: NSPoint?
     private var vorn: Bool?
     /// Animation läuft: `angedockt` noch nicht gemeldet
     private var settling = false
@@ -62,7 +60,6 @@ final class CompanionDock: ObservableObject {
     // MARK: Viereck ziehen
 
     func bubbleDragBegan(at origin: NSPoint) {
-        freeOrigin = origin
         ask()
     }
 
@@ -206,7 +203,7 @@ final class CompanionDock: ObservableObject {
         guard let d = docked, d.prozess == prozess, d.fenster == fenster, let w = WindowFinder.companion else { return }
         handle.hide()
         undock(w)
-        onGone?(freeOrigin)
+        onGone?(d.bereich.rect)
     }
 
     private func same(_ a: LoomnAndocken.Platz?, _ b: LoomnAndocken.Platz?) -> Bool {
