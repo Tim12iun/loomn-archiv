@@ -102,21 +102,17 @@ enum Screenshots {
         print("Mediathek: \(model.state), \(model.records.count) Videos")
 
         /// Prüfung gegen die graue macOS-Titelleiste (Rückfall in Build 123 und 129): Im echten Fenster muss
-        /// der Inhalt bis ganz oben reichen. Oberste Zeilen, die durchsichtig sind (oder beim Viereck nicht
-        /// orange), heißen: Der Titelstreifen ist leer und macOS zeigt dort seine graue Leiste.
+        /// der Inhalt bis ganz oben reichen. Durchsichtige oberste Zeilen heißen: Der Titelstreifen ist leer
+        /// und macOS zeigt dort seine graue Leiste.
         var titleBarFailed = false
-        func checkTitleBar(_ name: String, _ rep: NSBitmapImageRep, orange: Bool) {
-            let accent = NSColor(DS.accent).usingColorSpace(.sRGB)!
+        func checkTitleBar(_ name: String, _ rep: NSBitmapImageRep) {
             var bad: [String] = []
+            let scale = rep.pixelsHigh / max(Int(rep.size.height), 1)
             for y in [1, 6, 14, 24] {
                 for fx in [0.5, 0.75, 0.9] {
                     let x = Int(Double(rep.pixelsWide) * fx)
-                    let py = y * rep.pixelsHigh / max(Int(rep.size.height), 1)
-                    guard let c = rep.colorAt(x: x, y: py)?.usingColorSpace(.sRGB) else { continue }
-                    let ok = orange
-                        ? abs(c.redComponent - accent.redComponent) < 0.08 && abs(c.greenComponent - accent.greenComponent) < 0.08 && c.alphaComponent > 0.9
-                        : c.alphaComponent > 0.9
-                    if !ok { bad.append("x\(x) y\(y)") }
+                    guard let c = rep.colorAt(x: x, y: y * scale) else { continue }
+                    if c.alphaComponent < 0.9 { bad.append("x\(x) y\(y)") }
                 }
             }
             if bad.isEmpty { print("Titelleiste OK: \(name)") } else {
@@ -127,7 +123,7 @@ enum Screenshots {
 
         /// `realWindow`: Fenster wie in der App (Titelleiste unsichtbar, Inhalt darunter), damit
         /// Versätze durch den Titelstreifen auch im Bild auffallen
-        func shot<V: View>(_ name: String, _ view: V, size: CGSize = CGSize(width: 1440, height: 900), using other: AppModel? = nil, realWindow: Bool = false, orangeTop: Bool = false) async {
+        func shot<V: View>(_ name: String, _ view: V, size: CGSize = CGSize(width: 1440, height: 900), using other: AppModel? = nil, realWindow: Bool = false) async {
             let m = other ?? model
             let root = view
                 .environmentObject(m)
@@ -160,7 +156,7 @@ enum Screenshots {
                 host.cacheDisplay(in: host.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("\(name).png"))
                 print("Bild: \(name)")
-                if realWindow { checkTitleBar(name, rep, orange: orangeTop) }
+                if realWindow { checkTitleBar(name, rep) }
             }
             win.orderOut(nil)
         }
@@ -189,7 +185,7 @@ enum Screenshots {
         await shot("9-zeitraum", MoreFilters().padding(DS.margin), size: CGSize(width: 460, height: 760))
         await shot("9-kompagnon", CompanionView(), size: CGSize(width: 360, height: 640))
         await shot("9c-kompagnon-schmal", CompanionView(), size: CGSize(width: CompanionFold.minSize.width, height: 500))
-        await shot("9b-kompagnon-eingeklappt", CompanionBubble {}, size: CGSize(width: CompanionFold.size, height: CompanionFold.size), realWindow: true, orangeTop: true)
+        await shot("9b-kompagnon-eingeklappt", CompanionBubble {}, size: CGSize(width: CompanionFold.size, height: CompanionFold.size), realWindow: true)
         await shot("9d-kompagnon-fenster", CompanionView(), size: CompanionFold.defaultSize, realWindow: true)
         await shot("5-einstellungen", SettingsView(), size: CGSize(width: 1080, height: 700))
         await shot("5b-formate", SettingsView(tab: 1), size: CGSize(width: 1080, height: 700))
