@@ -29,6 +29,18 @@ extension AppModel {
         }
     }
 
+    /// Song-Audio zum Rausziehen: trägt den Song als Datei-Attribut (wie die Videos), aber bewusst
+    /// keine Archiv-ID, damit eine spätere Lieferung nicht als neue Fassung eines Videos gilt.
+    func songDragItem(_ s: SongItem, version: SongVersion? = nil) -> NSItemProvider {
+        guard online, let v = version ?? s.current, let url = audioURL(v) else { return NSItemProvider() }
+        url.withUnsafeFileSystemRepresentation { pfad in
+            guard let pfad else { return }
+            let daten = Array(s.title.utf8)
+            _ = setxattr(pfad, LoomnArchiv.songAttribut, daten, daten.count, 0, 0)
+        }
+        return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+    }
+
     /// Eingang prüfen (beim Start und alle 5 Sekunden). Ohne SSD bleibt alles liegen.
     func checkInbox() {
         guard online, !inboxRunning, library != nil, Screenshots.requested == nil else { return }

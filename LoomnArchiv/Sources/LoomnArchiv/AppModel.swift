@@ -327,6 +327,9 @@ final class AppModel: ObservableObject {
         return song
     }
 
+    /// Aktuelle Audiodatei eines Songs (nil ohne Audio oder ohne SSD)
+    func songAudio(_ s: SongItem) -> URL? { s.current.flatMap(audioURL) }
+
     /// Wo die Audiodatei liegt; nil, wenn die SSD fehlt oder die Datei nicht da ist.
     func audioURL(_ v: SongVersion) -> URL? {
         guard let u = library?.paths.url(v.file), FileManager.default.fileExists(atPath: u.path) else { return nil }

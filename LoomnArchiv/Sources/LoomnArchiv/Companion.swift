@@ -219,6 +219,7 @@ struct CompanionView: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
+                .onDrag { model.songDragItem(s) }
             }
             TextField(songID == nil ? "Song oder Stichwort …" : "Stichwort …", text: $filter.text)
                 .textFieldStyle(.plain).font(DS.font(15, .semibold))
@@ -245,6 +246,10 @@ struct CompanionView: View {
                                 Image(systemName: "music.note").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.accent)
                                 Text(s.title).font(DS.font(15, .bold)).lineLimit(1)
                                 Spacer(minLength: 4)
+                                // Mit Audio: lässt sich rausziehen
+                                if s.hasAudio {
+                                    Image(systemName: "waveform").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.dim)
+                                }
                                 Text("\(model.songStats.count[s.id] ?? 0)").font(DS.label).foregroundStyle(DS.dim)
                             }
                             .padding(.horizontal, 10)
@@ -254,6 +259,8 @@ struct CompanionView: View {
                         }
                         .buttonStyle(DSPress())
                         .onHover { if $0 { marked = i } }
+                        // Song direkt als Audiodatei in eine andere App ziehen
+                        .onDrag { model.songDragItem(s) }
                     }
                 }
                 .padding(4)
@@ -294,6 +301,16 @@ struct CompanionView: View {
 
     @ViewBuilder
     private var content: some View {
+        VStack(spacing: 0) {
+            if model.online, let id = songID, let s = model.catalog.song(id), s.hasAudio {
+                CompanionSongStrip(song: s).padding([.horizontal, .top], 12)
+            }
+            videos
+        }
+    }
+
+    @ViewBuilder
+    private var videos: some View {
         let items = list
         if !model.online {
             Text("SSD „\(model.rememberedVolume)“ fehlt").font(DS.font(15, .bold)).foregroundStyle(DS.amber)
@@ -316,6 +333,71 @@ struct CompanionView: View {
                 .padding(12)
             }
         }
+    }
+}
+
+/// Gewählter Song im Kompagnon: anhören, Version wählen und als Audiodatei in andere Apps ziehen
+/// (ganze Zeile). Ohne Audio gibt es die Zeile nicht.
+struct CompanionSongStrip: View {
+    @EnvironmentObject var model: AppModel
+    var song: SongItem
+    @StateObject private var player = AudioPlayer()
+    @State private var versionID: String?
+
+    private var version: SongVersion? {
+        song.versions.first { $0.id == versionID } ?? song.current
+    }
+
+    var body: some View {
+        let v = version
+        let url = v.flatMap { model.audioURL($0) }
+        let on = url != nil && player.url == url && player.playing
+        HStack(spacing: 10) {
+            Button { if let url { player.toggle(url) } } label: {
+                Image(systemName: on ? "pause.fill" : "play.fill").font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(DS.bg)
+                    .frame(width: 30, height: 30)
+                    .background(url == nil ? DS.dim : DS.accent, in: Circle())
+            }
+            .buttonStyle(DSPress())
+            .disabled(url == nil)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(song.title).font(DS.font(15, .bold)).lineLimit(1)
+                Text(detail(v, url)).font(DS.font(12, .semibold)).foregroundStyle(DS.dim).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if song.versions.count > 1 {
+                Menu {
+                    ForEach(song.versions.sorted { $0.number > $1.number }) { x in
+                        Button("V\(x.number)" + (x.id == song.current?.id ? " (aktuell)" : "")) {
+                            player.stop()
+                            versionID = x.id
+                        }
+                    }
+                } label: {
+                    Text("V\(v?.number ?? 0)").font(DS.font(13, .bold))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Version wählen")
+            }
+            Image(systemName: "hand.draw").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.dim)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 44)
+        .background(DS.surface, in: DS.shape)
+        .contentShape(DS.shape)
+        .onDrag { model.songDragItem(song, version: v) }
+        .help(url == nil ? "Audio nicht erreichbar (SSD angeschlossen?)" : "Gedrückt halten und in eine andere App ziehen")
+        .onChange(of: song.id) { _, _ in player.stop(); versionID = nil }
+        .onDisappear { player.stop() }
+    }
+
+    private func detail(_ v: SongVersion?, _ url: URL?) -> String {
+        guard let v else { return "" }
+        guard url != nil else { return "Audio nicht erreichbar" }
+        let ext = (url?.pathExtension ?? "").uppercased()
+        return ["V\(v.number)", v.duration.map(\.clock), ext].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
