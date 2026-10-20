@@ -109,11 +109,12 @@ struct CompanionSongDetail: View {
                 Spacer(minLength: 4)
                 Image(systemName: "hand.draw").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.dim)
             }
-            if big, let url {
+            // Wellenform wie im großen Fenster: Klick springt hin und spielt
+            if let url {
                 WaveformView(url: url, progress: player.url == url && player.duration > 0 ? player.time / player.duration : 0) { f in
                     player.play(url, at: f * max(player.url == url ? player.duration : (v.duration ?? 0), 0))
                 }
-                .frame(height: 40)
+                .frame(height: big ? 40 : 24)
             }
         }
         .padding(big ? 10 : 8)
