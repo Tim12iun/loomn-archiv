@@ -80,8 +80,8 @@ struct CompanionView: View {
         guard let w = WindowFinder.companion else { collapsed = on; fullMin = !on; return }
         if on {
             searching = false
-            // Angedockt heißt Einklappen lösen: eingesogen ins Viereck
-            if dock.docked != nil { dock.release(w); return }
+            // Angedockt wird nicht eingeklappt (lösen nur über das orange Viereck)
+            if dock.docked != nil { return }
             dock.ask()
             let target = CompanionFold.collapseTarget(w)
             let morph = CompanionMorph(from: w.frame, snapshot: CompanionMorph.snapshot(w), orange: 0)
@@ -250,7 +250,7 @@ struct CompanionView: View {
         .frame(height: 38)
         .padding(.top, targetGap.top)
         // Doppelklick auf die freie Leiste klappt zum Viereck ein
-        .background(WindowDragArea { setCollapsed(true) })
+        .background(WindowDragArea { if dock.docked == nil { setCollapsed(true) } })
     }
 
     /// Angedockt: Abstand der Kopfleiste, damit sie neben dem orangen Viereck (Griff zum Lösen) liegt

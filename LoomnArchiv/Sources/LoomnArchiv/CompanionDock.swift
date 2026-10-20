@@ -113,7 +113,7 @@ final class CompanionDock: ObservableObject {
         settling = false
         guard let p = docked else { return }
         verzeichnis?.melde(LoomnAndocken.angedockt, an: p)
-        if let w = WindowFinder.companion { handle.show(p, above: w) }
+        if let w = WindowFinder.companion { handle.show(p, above: w, flash: true) }
     }
 
     // MARK: Angedockt
@@ -131,13 +131,7 @@ final class CompanionDock: ObservableObject {
         arrange(w, p, force: true)
     }
 
-    /// Lösen (Knopf, Einklappen, Kopfleiste): ins Viereck unter der Maus einsaugen
-    func release(_ w: NSWindow) {
-        let s = CompanionFold.size
-        let m = NSEvent.mouseLocation
-        release(w, to: CompanionFold.fitted(NSRect(x: m.x - s / 2, y: m.y - s / 2, width: s, height: s)))
-    }
-
+    /// Lösen geht nur über das orange Viereck (Klick oder Herausziehen) oder durch Beenden von archivn
     private func release(_ w: NSWindow, to target: NSRect, keepHandle: Bool = false) {
         guard let p = docked, !settling else { return }
         if !keepHandle { handle.hide() }
@@ -149,16 +143,10 @@ final class CompanionDock: ObservableObject {
         undock(w)
     }
 
-    /// Viereck auf dem Ziel herausgezogen: Kompagnon wird in dieses Viereck gesogen
+    /// Viereck angeklickt oder herausgezogen: Kompagnon wird in dieses Viereck gesogen
     private func releaseFromHandle(to r: NSRect) {
         guard let w = WindowFinder.companion else { return }
         release(w, to: r, keepHandle: true)
-    }
-
-    /// Kopfleiste angedockt gezogen: weit genug raus löst, sonst zurück auf den Bereich
-    func headerDragEnded(_ w: NSWindow, distance: CGFloat) {
-        guard let p = docked else { return }
-        if distance > 24 { release(w) } else { w.setFrame(p.bereich.rect, display: true) }
     }
 
     /// Ecken des Andockbereichs am Fenster selbst runden (nicht in SwiftUI, siehe CompanionView)
@@ -233,10 +221,12 @@ final class DockHandle {
     var onRelease: ((NSRect) -> Void)?
     private var window: NSWindow?
 
-    func show(_ p: LoomnAndocken.Platz, above w: NSWindow) {
+    /// `flash`: leuchtet einmal kurz auf (nach dem Andocken: „hier ist das Viereck jetzt“)
+    func show(_ p: LoomnAndocken.Platz, above w: NSWindow, flash: Bool = false) {
         let win = window ?? make()
         window = win
         follow(p, above: w)
+        if flash { (win.contentView as? HandleView)?.flash() }
     }
 
     func follow(_ p: LoomnAndocken.Platz, above w: NSWindow) {
@@ -265,7 +255,8 @@ final class DockHandle {
         return win
     }
 
-    /// Ziehen: folgt der Maus, wächst mit der Entfernung; weit genug weg löst, sonst zurück aufs Ziel
+    /// Klick: wächst auf Viereck-Größe, der Kompagnon wird hineingesogen. Ziehen: folgt der Maus und wächst
+    /// mit der Entfernung; weit genug weg loslassen löst, kurz gezogen schnappt es zurück aufs Ziel.
     fileprivate func drag(_ win: NSWindow) {
         let start = NSEvent.mouseLocation
         let home = win.frame
@@ -273,41 +264,64 @@ final class DockHandle {
         var dist: CGFloat = 0
         while let e = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             let m = NSEvent.mouseLocation
-            dist = hypot(m.x - start.x, m.y - start.y)
-            let t = min(dist / 120, 1)
-            let w = home.width + (full - home.width) * t, h = home.height + (full - home.height) * t
-            let c = NSPoint(x: home.midX + m.x - start.x, y: home.midY + m.y - start.y)
-            win.setFrame(NSRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h), display: true)
+            dist = max(dist, hypot(m.x - start.x, m.y - start.y))
+            if dist > 3 {
+                let d = hypot(m.x - start.x, m.y - start.y)
+                let t = min(d / 80, 1)
+                let w = home.width + (full - home.width) * t, h = home.height + (full - home.height) * t
+                let c = NSPoint(x: home.midX + m.x - start.x, y: home.midY + m.y - start.y)
+                win.setFrame(NSRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h), display: true)
+            }
             if e.type == .leftMouseUp { break }
         }
-        if dist > 24 {
-            let f = win.frame
-            let target = CompanionFold.fitted(NSRect(x: f.midX - full / 2, y: f.midY - full / 2, width: full, height: full))
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.15
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                win.animator().setFrame(target, display: true)
-            }
-            onRelease?(target)
-        } else {
+        let end = NSEvent.mouseLocation
+        let away = hypot(end.x - start.x, end.y - start.y)
+        if dist > 3 && away <= 24 {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.18
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 win.animator().setFrame(home, display: true)
             }
+            return
         }
+        let f = win.frame
+        let target = CompanionFold.fitted(NSRect(x: f.midX - full / 2, y: f.midY - full / 2, width: full, height: full))
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            win.animator().setFrame(target, display: true)
+        }
+        onRelease?(target)
     }
 
-    private final class HandleView: NSView {
+    fileprivate final class HandleView: NSView {
         weak var owner: DockHandle?
         override var isFlipped: Bool { true }
         override var mouseDownCanMoveWindow: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
         override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); needsDisplay = true }
+        private var glow: CGFloat = 0
+        private var flashTimer: Timer?
+
+        /// Einmal kurz hell aufleuchten
+        func flash() {
+            flashTimer?.invalidate()
+            let start = Date()
+            flashTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] t in
+                MainActor.assumeIsolated {
+                    guard let self else { t.invalidate(); return }
+                    let x = Date().timeIntervalSince(start) / 0.55
+                    self.glow = x >= 1 ? 0 : CGFloat(sin(x * .pi))
+                    self.needsDisplay = true
+                    if x >= 1 { t.invalidate() }
+                }
+            }
+        }
         override func draw(_ dirtyRect: NSRect) {
-            NSColor(DS.accent).setFill()
             let r = min(bounds.width, bounds.height) * 0.22
-            NSBezierPath(roundedRect: bounds, xRadius: r, yRadius: r).fill()
+            let path = NSBezierPath(roundedRect: bounds, xRadius: r, yRadius: r)
+            (NSColor(DS.accent).blended(withFraction: glow * 0.55, of: .white) ?? NSColor(DS.accent)).setFill()
+            path.fill()
         }
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }

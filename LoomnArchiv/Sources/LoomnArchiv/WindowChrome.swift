@@ -48,10 +48,12 @@ struct WindowDragArea: NSViewRepresentable {
         /// Fenster selbst mit der Maus mitführen, ohne das Verschieben von macOS
         /// (das würde am Bildschirmrand das Andocken bzw. Kacheln auslösen)
         static func move(_ window: NSWindow) {
+            let dock = CompanionDock.shared
+            // Angedockt liegt der Kompagnon fest; lösen geht nur über das orange Viereck
+            if dock.isDocked(window) { return }
             let start = NSEvent.mouseLocation
             let origin = window.frame.origin
             var p = start
-            let dock = CompanionDock.shared
             // Freier, aufgeklappter Kompagnon lässt sich auch direkt andocken (Mauszeiger aufs Ziel)
             let canDock = window === WindowFinder.companion && !dock.isDocked(window)
             if canDock { dock.bubbleDragBegan(at: origin) }
@@ -65,10 +67,6 @@ struct WindowDragArea: NSViewRepresentable {
                 if e.type == .leftMouseUp { break }
             }
             if canDock { _ = dock.bubbleDropped() }
-            // Angedockter Kompagnon: weit genug rausgezogen löst ihn, sonst springt er zurück
-            if CompanionDock.shared.isDocked(window) {
-                CompanionDock.shared.headerDragEnded(window, distance: hypot(p.x - start.x, p.y - start.y))
-            }
         }
 
         static func doubleClick(_ w: NSWindow) {
