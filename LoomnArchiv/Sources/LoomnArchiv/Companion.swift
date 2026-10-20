@@ -18,27 +18,16 @@ struct CompanionView: View {
     /// Bewusst nicht gespeichert: nach Neustart oder erneutem Öffnen kommt immer der ganze Kompagnon
     @State private var collapsed = false
 
-    /// Kompagnon liegt (auch während des Ein- und Aufklappens) unter der orangen Fläche
-    @State private var panelShown = true
-    /// Mindestgröße des aufgeklappten Kompagnons gilt erst, wenn er fertig aufgeklappt ist
+    /// Mindestgröße des aufgeklappten Kompagnons gilt nur aufgeklappt
     @State private var fullMin = true
 
-    /// Während des Auf- und Zuklappens behält der Inhalt seine volle Größe (wird nur angeschnitten),
-    /// statt bei jedem Schritt neu umzubrechen: das hält die Animation flüssig
-    @State private var frozen: CGSize?
-
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if panelShown {
+        Group {
+            if collapsed {
+                CompanionBubble { setCollapsed(false) }
+            } else {
                 panel
-                    .frame(width: frozen?.width, height: frozen?.height, alignment: .topLeading)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .clipped()
             }
-            // Orange blendet während der Größenänderung weich über bzw. weg, ohne sie zu verlängern
-            CompanionBubble(handle: collapsed) { setCollapsed(false) }
-                .opacity(collapsed ? 1 : 0)
-                .allowsHitTesting(collapsed)
         }
         // Kleiner geht nicht: Suchfeld und RAW, CUT, EDIT, FINAL müssen ganz zu sehen sein
         .frame(minWidth: fullMin ? CompanionFold.minSize.width : nil, minHeight: fullMin ? CompanionFold.minSize.height : nil)
@@ -62,32 +51,43 @@ struct CompanionView: View {
     /// Aufgeklappt in normaler Größe, egal in welchem Zustand er zugemacht wurde
     private func reopen() {
         collapsed = false
-        panelShown = true
         fullMin = true
-        frozen = nil
         DispatchQueue.main.async { CompanionFold.restore(WindowFinder.companion) }
     }
 
+    /// Ein- und Aufklappen: Das echte Fenster springt unsichtbar auf die neue Größe, sichtbar ist
+    /// währenddessen nur eine Animation auf der Grafikkarte (Bild des Kompagnons und orange Fläche).
+    /// So wird nichts bei jedem Schritt neu berechnet und es läuft flüssig.
     private func setCollapsed(_ on: Bool) {
-        guard let w = WindowFinder.companion else { collapsed = on; panelShown = !on; return }
-        let fade = Animation.easeInOut(duration: CompanionFold.duration)
-        // Inhaltsfläche ohne den unsichtbaren Titelstreifen
-        let strip = w.frame.height - w.contentLayoutRect.height
+        guard let w = WindowFinder.companion else { collapsed = on; fullMin = !on; return }
         if on {
             searching = false
+            let target = CompanionFold.collapseTarget(w)
+            let morph = CompanionMorph(from: w.frame, snapshot: CompanionMorph.snapshot(w), orange: 0)
+            w.alphaValue = 0
+            CompanionFold.chrome(w, collapsed: true)
             fullMin = false
-            frozen = w.contentLayoutRect.size
-            withAnimation(fade) { collapsed = true }
-            CompanionFold.collapse(w) { if collapsed { panelShown = false; frozen = nil } }
+            collapsed = true
+            w.contentMinSize = NSSize(width: CompanionFold.size, height: 16)
+            DispatchQueue.main.async { w.setFrame(target, display: true) }
+            morph.run(to: target, orange: 1) {
+                // Sicherheitshalber: das Fenster ist jetzt wirklich das Viereck
+                if w.frame != target { w.setFrame(target, display: true) }
+                w.alphaValue = 1
+            }
         } else {
             let target = CompanionFold.expandTarget(w)
-            frozen = CGSize(width: target.width, height: target.height - strip)
-            panelShown = true
-            withAnimation(fade) { collapsed = false }
-            CompanionFold.expand(w, to: target) {
-                fullMin = true
-                frozen = nil
+            let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1)
+            w.alphaValue = 0
+            collapsed = false
+            fullMin = true
+            CompanionFold.chrome(w, collapsed: false)
+            w.setFrame(target, display: true)
+            // Sobald der Kompagnon in voller Größe gezeichnet ist, liegt sein Bild unter dem Orange
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                morph.setSnapshot(CompanionMorph.snapshot(w))
             }
+            morph.run(to: target, orange: 0) { w.alphaValue = 1 }
         }
     }
 
@@ -376,8 +376,6 @@ struct CompanionButton: View {
 
 /// Eingeklappter Kompagnon: kleines Viereck. Doppelklick klappt auf, Ziehen verschiebt, einfacher Klick tut nichts.
 struct CompanionBubble: View {
-    /// Nur eingeklappt: Ziehen und Doppelklick
-    var handle = true
     var open: () -> Void
     @State private var hover = false
 
@@ -391,7 +389,7 @@ struct CompanionBubble: View {
                 DS.accent.brightness(hover ? 0.06 : 0)
                 StackMark(unit: g.size.width * 0.0075)
                     .position(x: g.size.width / 2, y: g.size.height / 2)
-                if handle { BubbleHandle(open: open) }
+                BubbleHandle(open: open)
             }
             .frame(width: g.size.width, height: g.size.height)
             .ignoresSafeArea()
@@ -479,6 +477,7 @@ enum CompanionFold {
     /// Normaler Kompagnon: Fensterknöpfe zeigen, und ein zu kleines Fenster (vom Viereck) auf die letzte Größe bringen
     static func restore(_ w: NSWindow?) {
         guard let w else { return }
+        w.alphaValue = 1
         chrome(w, collapsed: false)
         guard w.frame.width < minSize.width || w.frame.height < minSize.height else { return }
         let s = lastSize
@@ -486,12 +485,12 @@ enum CompanionFold {
         w.setFrame(fit(NSRect(x: f.midX - s.width / 2, y: f.maxY - s.height, width: s.width, height: s.height)), display: true)
     }
 
-    /// Schrumpft genau unter den Mauszeiger (mittig), am Bildschirmrand nach innen versetzt
-    static func collapse(_ w: NSWindow, done: @escaping () -> Void) {
+    /// Schrumpft genau unter den Mauszeiger (mittig), am Bildschirmrand nach innen versetzt.
+    /// Merkt sich die aktuelle Größe fürs nächste Aufklappen.
+    static func collapseTarget(_ w: NSWindow) -> NSRect {
         UserDefaults.standard.set(NSStringFromSize(w.frame.size), forKey: sizeKey)
         let m = NSEvent.mouseLocation
-        chrome(w, collapsed: true)
-        animate(w, to: fit(NSRect(x: m.x - size / 2, y: m.y - size / 2, width: size, height: size)), done: done)
+        return fit(NSRect(x: m.x - size / 2, y: m.y - size / 2, width: size, height: size))
     }
 
     /// Klappt so auf, dass die Maus oben mittig in der Kopfleiste sitzt (das Fenster hängt unter ihr),
@@ -501,13 +500,6 @@ enum CompanionFold {
         let m = NSEvent.mouseLocation
         let header: CGFloat = 38
         return fit(NSRect(x: m.x - s.width / 2, y: m.y + header / 2 - s.height, width: s.width, height: s.height))
-    }
-
-    static func expand(_ w: NSWindow, to r: NSRect, done: @escaping () -> Void) {
-        animate(w, to: r) {
-            chrome(w, collapsed: false)
-            done()
-        }
     }
 
     /// Immer ganz auf einem Bildschirm
@@ -521,15 +513,102 @@ enum CompanionFold {
         out.origin.y = min(max(r.minY, v.minY), v.maxY - out.height)
         return out
     }
+}
 
-    private static func animate(_ w: NSWindow, to r: NSRect, done: (() -> Void)? = nil) {
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = duration
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            w.animator().setFrame(r, display: true)
-        } completionHandler: {
-            MainActor.assumeIsolated { done?() }
+/// Animation des Ein- und Aufklappens in einem eigenen, durchsichtigen Fenster über allem:
+/// zwei Ebenen (Bild des Kompagnons, darüber Orange mit Stapel), die gemeinsam ihre Größe ändern,
+/// während das Orange ein- bzw. ausblendet. Läuft komplett auf der Grafikkarte.
+@MainActor
+final class CompanionMorph {
+    private let overlay: NSWindow
+    private let shot = CALayer()
+    private let orange = CALayer()
+    private let origin: CGPoint
+    private static let radius: CGFloat = 10
+
+    init(from frame: NSRect, snapshot: CGImage?, orange start: Float) {
+        let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main
+        let area = screen?.frame ?? frame
+        origin = area.origin
+        overlay = NSWindow(contentRect: area, styleMask: .borderless, backing: .buffered, defer: false)
+        overlay.isOpaque = false
+        overlay.backgroundColor = .clear
+        overlay.hasShadow = false
+        overlay.ignoresMouseEvents = true
+        overlay.level = .floating
+        overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        overlay.isReleasedWhenClosed = false
+        let view = NSView(frame: NSRect(origin: .zero, size: area.size))
+        view.wantsLayer = true
+        overlay.contentView = view
+        let scale = screen?.backingScaleFactor ?? 2
+        let local = Self.local(frame, origin)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for l in [shot, orange] {
+            l.frame = local
+            l.cornerRadius = Self.radius
+            l.cornerCurve = .continuous
+            l.masksToBounds = true
+            l.contentsScale = scale
+            view.layer?.addSublayer(l)
         }
+        shot.contentsGravity = .topLeft
+        shot.backgroundColor = NSColor(DS.bg).cgColor
+        shot.contents = snapshot
+        orange.backgroundColor = NSColor(DS.accent).cgColor
+        orange.contentsGravity = .center
+        orange.contents = Self.mark(scale: scale)
+        orange.opacity = start
+        CATransaction.commit()
+        overlay.orderFrontRegardless()
+        overlay.displayIfNeeded()
+        CATransaction.flush()
+    }
+
+    func setSnapshot(_ image: CGImage?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        shot.contents = image
+        CATransaction.commit()
+    }
+
+    func run(to frame: NSRect, orange end: Float, done: @escaping () -> Void) {
+        let local = Self.local(frame, origin)
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(CompanionFold.duration)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        CATransaction.setCompletionBlock { [overlay] in
+            MainActor.assumeIsolated {
+                done()
+                // Erst wenn das echte Fenster wieder sichtbar ist, die Animation wegnehmen
+                DispatchQueue.main.async { overlay.orderOut(nil) }
+            }
+        }
+        shot.frame = local
+        orange.frame = local
+        orange.opacity = end
+        CATransaction.commit()
+    }
+
+    private static func local(_ r: NSRect, _ origin: CGPoint) -> CGRect {
+        CGRect(x: r.minX - origin.x, y: r.minY - origin.y, width: r.width, height: r.height)
+    }
+
+    /// Bild des ganzen Fensters samt Kopfleiste
+    static func snapshot(_ w: NSWindow) -> CGImage? {
+        guard let v = w.contentView?.superview ?? w.contentView else { return nil }
+        v.layoutSubtreeIfNeeded()
+        guard let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return nil }
+        v.cacheDisplay(in: v.bounds, to: rep)
+        return rep.cgImage
+    }
+
+    /// Stapel-Zeichen in Viereck-Größe
+    private static func mark(scale: CGFloat) -> CGImage? {
+        let r = ImageRenderer(content: StackMark(unit: CompanionFold.size * 0.0075))
+        r.scale = scale
+        return r.cgImage
     }
 }
 
