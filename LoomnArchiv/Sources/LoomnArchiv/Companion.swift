@@ -20,6 +20,8 @@ struct CompanionView: View {
 
     /// Kompagnon liegt (auch während des Ein- und Aufklappens) unter der orangen Fläche
     @State private var panelShown = true
+    /// Mindestgröße des aufgeklappten Kompagnons gilt erst, wenn er fertig aufgeklappt ist
+    @State private var fullMin = true
 
     var body: some View {
         ZStack {
@@ -29,6 +31,8 @@ struct CompanionView: View {
                 .opacity(collapsed ? 1 : 0)
                 .allowsHitTesting(collapsed)
         }
+        // Kleiner geht nicht: Suchfeld und RAW, CUT, EDIT, FINAL müssen ganz zu sehen sein
+        .frame(minWidth: fullMin ? CompanionFold.minSize.width : nil, minHeight: fullMin ? CompanionFold.minSize.height : nil)
         .onAppear {
             model.companionOpen = true
             refreshMain()
@@ -50,12 +54,13 @@ struct CompanionView: View {
         let fade = Animation.easeInOut(duration: CompanionFold.duration)
         if on {
             searching = false
+            fullMin = false
             withAnimation(fade) { collapsed = true }
             CompanionFold.collapse(w) { if collapsed { panelShown = false } }
         } else {
             panelShown = true
             withAnimation(fade) { collapsed = false }
-            CompanionFold.expand(w) {}
+            CompanionFold.expand(w) { fullMin = true }
         }
     }
 
@@ -90,10 +95,29 @@ struct CompanionView: View {
     // MARK: Kopf
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Text("KOMPAGNON").font(DS.font(13, .bold)).tracking(1.4).foregroundStyle(DS.dim)
-                .allowsHitTesting(false)
-            Spacer()
+        // Wird es schmal, fällt der Schriftzug weg statt umzubrechen
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Text("KOMPAGNON").font(DS.font(13, .bold)).tracking(1.4).foregroundStyle(DS.dim)
+                    .lineLimit(1).fixedSize()
+                    .allowsHitTesting(false)
+                Spacer(minLength: 8)
+                headerButtons
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                headerButtons
+            }
+        }
+        .padding(.leading, 86) // Platz für die Fensterknöpfe, mit etwas Luft
+        .padding(.trailing, 12)
+        .frame(height: 38)
+        // Doppelklick auf die freie Leiste klappt zum Viereck ein
+        .background(WindowDragArea { setCollapsed(true) })
+    }
+
+    @ViewBuilder
+    private var headerButtons: some View {
             // Zum kleinen Viereck einklappen
             Button { setCollapsed(true) } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 11, weight: .bold))
@@ -113,12 +137,6 @@ struct CompanionView: View {
             }
             .buttonStyle(DSPress())
             .help(mainShown ? "Großes Fenster ausblenden" : "Großes Fenster einblenden")
-        }
-        .padding(.leading, 86) // Platz für die Fensterknöpfe, mit etwas Luft
-        .padding(.trailing, 12)
-        .frame(height: 38)
-        // Doppelklick auf die freie Leiste klappt zum Viereck ein
-        .background(WindowDragArea { setCollapsed(true) })
     }
 
     private func refreshMain() {
@@ -402,6 +420,8 @@ private struct BubbleHandle: NSViewRepresentable {
 enum CompanionFold {
     static let size: CGFloat = 64
     static let duration = 0.22
+    /// Kleinste Größe des aufgeklappten Kompagnons
+    static let minSize = CGSize(width: 178, height: 300)
     private static let sizeKey = "kompagnon.groesse"
 
     /// Fensterknöpfe und Größe-Ändern nur im aufgeklappten Zustand
@@ -417,7 +437,7 @@ enum CompanionFold {
     static func restore(_ w: NSWindow?) {
         guard let w else { return }
         chrome(w, collapsed: false)
-        guard w.frame.width < 200 || w.frame.height < 200 else { return }
+        guard w.frame.width < minSize.width || w.frame.height < minSize.height else { return }
         let s = UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString) ?? NSSize(width: 360, height: 640)
         let f = w.frame
         w.setFrame(fit(NSRect(x: f.midX - s.width / 2, y: f.maxY - s.height, width: s.width, height: s.height)), display: true)
