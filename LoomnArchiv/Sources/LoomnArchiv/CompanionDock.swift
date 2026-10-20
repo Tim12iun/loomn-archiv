@@ -36,6 +36,15 @@ final class CompanionDock: ObservableObject {
     private var settling = false
     private let handle = DockHandle()
 
+    /// Wo das orange Viereck zum Lösen liegt: auf dem Ziel, wenn es im Bereich liegt (neuere Tools),
+    /// sonst oben rechts in der Kopfleiste des Kompagnons
+    static func handleRect(_ p: LoomnAndocken.Platz) -> NSRect {
+        let b = p.bereich.rect, z = p.ziel.rect
+        if b.contains(z) { return z }
+        let s: CGFloat = 24
+        return NSRect(x: b.maxX - 12 - s, y: b.maxY - 19 - s / 2, width: s, height: s)
+    }
+
     func start() {
         guard verzeichnis == nil, Screenshots.requested == nil else { return }
         let v = LoomnAndocken.Verzeichnis()
@@ -233,7 +242,8 @@ final class DockHandle {
     func follow(_ p: LoomnAndocken.Platz, above w: NSWindow) {
         guard let win = window else { return }
         guard p.sichtbar else { if win.isVisible { win.orderOut(nil) }; return }
-        if win.frame != p.ziel.rect { win.setFrame(p.ziel.rect, display: true) }
+        let r = CompanionDock.handleRect(p)
+        if win.frame != r { win.setFrame(r, display: true) }
         win.level = w.level
         if w.isVisible { win.order(.above, relativeTo: w.windowNumber) }
     }

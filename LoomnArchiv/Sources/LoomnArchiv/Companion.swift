@@ -10,6 +10,8 @@ struct CompanionView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var filter = LibraryFilter()
     @State private var songID: String?
+    /// SONG-Knopf: statt Videos die Songs zeigen (zum Auswählen oder als Audio rausziehen)
+    @State private var songMode = false
     @State private var mainShown = true
     @FocusState private var searching: Bool
     /// Markierter Vorschlag (Maus oder Pfeiltasten), Enter nimmt ihn
@@ -251,29 +253,19 @@ struct CompanionView: View {
         .background(WindowDragArea { setCollapsed(true) })
     }
 
-    /// Angedockt mit dem Ziel im Bereich: Abstand der Kopfleiste, damit sie neben dem Viereck liegt
+    /// Angedockt: Abstand der Kopfleiste, damit sie neben dem orangen Viereck (Griff zum Lösen) liegt
     private var targetGap: (leading: CGFloat, trailing: CGFloat, top: CGFloat) {
         guard let p = dock.docked else { return (0, 0, 0) }
-        let b = p.bereich.rect, z = p.ziel.rect
-        guard b.contains(z) else { return (0, 0, 0) }
+        let b = p.bereich.rect, z = CompanionDock.handleRect(p)
         let top = max(0, b.maxY - z.midY - 19)
         if z.midX > b.midX { return (0, b.maxX - z.minX - 4, top) }
         return (z.maxX - b.minX - 4, 0, top)
     }
 
+    /// Angedockt gibt es keine Knöpfe: Lösen geht über das orange Viereck oben rechts
     @ViewBuilder
     private var headerButtons: some View {
-            // Angedockt: wieder frei schweben lassen
-            if dock.docked != nil {
-                Button { if let w = WindowFinder.companion { dock.release(w) } } label: {
-                    Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 11, weight: .bold))
-                        .frame(width: 30, height: 22)
-                        .background(DS.surface, in: DS.shape)
-                        .contentShape(DS.shape)
-                }
-                .buttonStyle(DSPress())
-                .help("Lösen")
-            }
+        if dock.docked == nil {
             // Zum kleinen Viereck einklappen
             Button { setCollapsed(true) } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 11, weight: .bold))
@@ -293,6 +285,7 @@ struct CompanionView: View {
             }
             .buttonStyle(DSPress())
             .help(mainShown ? "Großes Fenster ausblenden" : "Großes Fenster einblenden")
+        }
     }
 
     private func refreshMain() {
@@ -321,7 +314,7 @@ struct CompanionView: View {
 
     private var suggestions: [SongItem] {
         let q = filter.text.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty, songID == nil else { return [] }
+        guard !q.isEmpty, songID == nil, !songMode else { return [] }
         return model.catalog.visibleSongs
             .map { ($0, SongSearch.score(q, $0.title)) }
             .filter { $0.1 > 0 }
@@ -410,19 +403,63 @@ struct CompanionView: View {
     private var kinds: some View {
         HStack(spacing: 4) {
             ForEach(model.catalog.visibleKinds) { k in
-                let on = filter.kindIDs.contains(k.id)
-                Button {
-                    if on { filter.kindIDs.remove(k.id) } else { filter.kindIDs.insert(k.id) }
-                } label: {
-                    Text(k.name).font(DS.font(12, .bold)).tracking(0.8)
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity).frame(height: 28)
-                        .foregroundStyle(on ? DS.bg : DS.text)
-                        .background(on ? DS.accent : DS.surface, in: DS.shape)
-                        .contentShape(DS.shape)
+                kindButton(k.name, on: filter.kindIDs.contains(k.id)) {
+                    songMode = false
+                    if filter.kindIDs.contains(k.id) { filter.kindIDs.remove(k.id) } else { filter.kindIDs.insert(k.id) }
                 }
-                .buttonStyle(DSPress())
             }
+            // SONG wählt alle anderen ab; nochmal klicken nimmt nur SONG wieder raus
+            kindButton("Song", on: songMode) {
+                if !songMode { filter.kindIDs = [] }
+                songMode.toggle()
+            }
+        }
+    }
+
+    private func kindButton(_ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title.uppercased()).font(DS.font(12, .bold)).tracking(0.8)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity).frame(height: 28)
+                .foregroundStyle(on ? DS.bg : DS.text)
+                .background(on ? DS.accent : DS.surface, in: DS.shape)
+                .contentShape(DS.shape)
+        }
+        .buttonStyle(DSPress())
+    }
+
+    /// Alle Songs (Suchtext filtert), zuletzt benutzte zuerst. Klick zeigt die Videos des Songs,
+    /// Ziehen nimmt die Audiodatei mit.
+    private var songList: some View {
+        let q = filter.text.trimmingCharacters(in: .whitespaces)
+        let songs = model.songsByActivity.filter { q.isEmpty || SongSearch.score(q, $0.title) > 0 }
+        return ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(songs) { s in
+                    Button { songMode = false; pick(s) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "music.note").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.accent)
+                            Text(s.title).font(DS.font(15, .bold)).lineLimit(1)
+                            Spacer(minLength: 4)
+                            if s.hasAudio {
+                                Image(systemName: "waveform").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.dim)
+                            }
+                            Text("\(model.songStats.count[s.id] ?? 0)").font(DS.label).foregroundStyle(DS.dim)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .listRowHover()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(DSPress())
+                    .onDrag { model.songDragItem(s) }
+                }
+                if songs.isEmpty {
+                    Text("Kein Song").font(DS.font(16, .bold)).foregroundStyle(DS.dim).padding(.top, 20)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
         }
     }
 
@@ -431,10 +468,14 @@ struct CompanionView: View {
     @ViewBuilder
     private var content: some View {
         VStack(spacing: 0) {
-            if model.online, let id = songID, let s = model.catalog.song(id), s.hasAudio {
-                CompanionSongStrip(song: s).padding([.horizontal, .top], 12)
+            if songMode {
+                songList
+            } else {
+                if model.online, let id = songID, let s = model.catalog.song(id), s.hasAudio {
+                    CompanionSongStrip(song: s).padding([.horizontal, .top], 12)
+                }
+                videos
             }
-            videos
         }
     }
 
