@@ -94,6 +94,10 @@ struct SongSidebar: View {
                 }
                 .padding(.bottom, DS.gap)
             }
+            // Stapel liegt dort, wo sonst die Versionszeile steht
+            if !model.stack.isEmpty {
+                VideoStack()
+            } else {
             // Versionszeile: Klick sucht nach Updates
             Button {
                 model.settingsTab = 5
@@ -108,6 +112,7 @@ struct SongSidebar: View {
             }
             .buttonStyle(.plain)
             .help("Nach Updates suchen")
+            }
         }
         .padding([.horizontal, .top], DS.gap)
         .bleed(DS.surface.opacity(0.35), [.leading, .bottom])
@@ -191,10 +196,10 @@ struct BrowserView: View {
 }
 
 /// Seite eines Songs: oben Eingrenzen nach Format und Mood, darunter je eine Reihe
-/// RAW, CUT, EDIT, FINAL. „Alle zeigen“ klappt eine Reihe zum Raster auf.
+/// RAW, CUT, EDIT, FINAL. Ein Schalter oben gilt für alle Abschnitte und Songs: Reihe oder alle untereinander.
 struct SongPage: View {
     @EnvironmentObject var model: AppModel
-    @State private var expanded: Set<String> = []
+    @AppStorage(RowGridSwitch.key) private var grid = false
     /// Audio-Modul: eingeklappt, Notenknopf neben dem Namen klappt es auf
     @State private var audioOpen = Screenshots.requested != nil
 
@@ -229,8 +234,12 @@ struct SongPage: View {
                     SongHeader(song: song)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                KindFilter(kinds: c.visibleKinds, selected: $model.filter.kindIDs,
-                           counts: Dictionary(grouping: all, by: \.kind.id).mapValues(\.count))
+                HStack(spacing: DS.gap) {
+                    KindFilter(kinds: c.visibleKinds, selected: $model.filter.kindIDs,
+                               counts: Dictionary(grouping: all, by: \.kind.id).mapValues(\.count))
+                    Spacer(minLength: 0)
+                    RowGridSwitch(grid: $grid)
+                }
                 narrowing(all: all, catalog: c)
                 if all.isEmpty {
                     Text("Noch keine Videos").font(DS.font(18)).foregroundStyle(DS.dim)
@@ -305,17 +314,11 @@ struct SongPage: View {
 
     @ViewBuilder
     private func row(_ k: ListItem, _ list: [VideoRecord]) -> some View {
-        let open = expanded.contains(k.id)
+        let open = grid
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(k.name).font(DS.font(26, .bold)).foregroundStyle(k.id == Kind.final ? DS.accent : DS.text)
                 Text("\(list.count) Videos").dsLabel()
-                if list.count > 1 {
-                    Button { if open { expanded.remove(k.id) } else { expanded.insert(k.id) } } label: {
-                        Text(open ? "Als Reihe ‹" : "Alle zeigen ›").dsLabel(DS.accent)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
             if list.isEmpty {
                 Text("Noch keine").font(DS.font(16)).foregroundStyle(DS.line).frame(height: 30)
@@ -325,18 +328,18 @@ struct SongPage: View {
                     ForEach(list) { r in tile(r, in: list).frame(width: VideoTile.width) }
                 }
             } else {
-                ScrollView(.horizontal, showsIndicators: true) {
+                // Seitlich scrollen ohne sichtbare Leiste
+                ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: DS.margin) {
                         ForEach(list) { r in tile(r, in: list).frame(width: VideoTile.width) }
                     }
-                    .padding(.bottom, 6)
                 }
             }
         }
     }
 
     private func tile(_ r: VideoRecord, in list: [VideoRecord]) -> some View {
-        VideoTile(record: r, selected: model.selection.contains(r.id), showSong: false)
+        VideoTile(record: r, selected: model.marked(r), showSong: false)
             // Ein Klick wählt sofort (ohne auf einen Doppelklick zu warten), der zweite öffnet
             .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } else { model.select(r, in: list) } }
             .contextMenu {
@@ -455,7 +458,7 @@ struct LibraryView: View {
                     ScrollView {
                         LazyVGrid(columns: VideoTile.columns, alignment: .leading, spacing: DS.margin) {
                             ForEach(list) { r in
-                                VideoTile(record: r, selected: model.selection.contains(r.id))
+                                VideoTile(record: r, selected: model.marked(r))
                                     .frame(width: VideoTile.width)
                                     // Ein Klick wählt sofort (ohne auf einen Doppelklick zu warten), der zweite öffnet
                                     .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } else { model.select(r, in: list) } }
@@ -730,7 +733,9 @@ struct Inspector: View {
     @State private var player: AVPlayer?
     @State private var ready = false
     @StateObject private var playback = PlaybackState()
-    @State private var pendingSave: Task<Void, Never>?
+    /// Angaben sind gesperrt, bis man „Bearbeiten“ drückt: so ändert ein Klick nicht aus Versehen
+    /// Art oder Song (das Video wäre dann plötzlich weg). Übernommen wird erst mit „Speichern“.
+    @State private var editing = false
 
     private var original: [Attrs] { records.map(Attrs.init) }
     private var changed: Bool { !draft.isEmpty && draft != original }
@@ -746,13 +751,15 @@ struct Inspector: View {
                         Text("\(records.count) Videos ausgewählt").font(DS.font(28, .bold))
                     }
                     if !draft.isEmpty {
-                        AttributeEditor(attrs: $draft)
+                        editBar
+                        AttributeEditor(attrs: $draft, saved: editing ? original : nil)
+                            .allowsHitTesting(editing)
                     }
                 }
                 .padding(DS.margin)
             }
-            // Änderungen speichern sich selbst; Hinweis nur, wenn das gerade nicht geht
-            if changed, let why = blocked {
+            // Speichern geht gerade nicht: Hinweis warum
+            if editing, changed, let why = blocked {
                 Rectangle().fill(DS.line).frame(height: 1)
                 Label(why, systemImage: "exclamationmark.triangle.fill")
                     .font(DS.font(15, .semibold)).foregroundStyle(DS.amber)
@@ -762,30 +769,32 @@ struct Inspector: View {
         }
         .bleed(DS.surface.opacity(0.35), [.trailing, .bottom])
         .onAppear { draft = original }
-        .onChange(of: draft) { _, _ in scheduleSave() }
         .onDisappear {
             player?.pause()
             playback.detach()
-            if pendingSave != nil { pendingSave?.cancel(); if changed, blocked == nil { save() } }
+        }
+    }
+
+    /// Gleiche Höhe in beiden Zuständen, damit darunter nichts springt
+    private var editBar: some View {
+        HStack(spacing: DS.gap) {
+            if editing {
+                DSButton("Abbrechen") { draft = original; editing = false }
+                DSButton("Speichern", icon: "checkmark", active: changed && blocked == nil) {
+                    if changed { save() }
+                    editing = false
+                }
+                .disabled(changed && blocked != nil)
+            } else {
+                DSButton("Bearbeiten", icon: "pencil") { draft = original; editing = true }
+            }
         }
     }
 
     private var blocked: String? {
         if !model.online { return "SSD fehlt, Änderung wird nicht gespeichert" }
-        if !draft.allSatisfy(\.complete) { return "Pflichtangabe fehlt, gespeichert wird, sobald alles gesetzt ist" }
+        if !draft.allSatisfy(\.complete) { return "Pflichtangabe fehlt" }
         return nil
-    }
-
-    /// Kurz nach der letzten Änderung speichern (beim Tippen nicht bei jedem Buchstaben)
-    private func scheduleSave() {
-        pendingSave?.cancel()
-        guard changed, blocked == nil else { pendingSave = nil; return }
-        pendingSave = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled else { return }
-            pendingSave = nil
-            if changed, blocked == nil { save() }
-        }
     }
 
     private func save() {
@@ -969,13 +978,37 @@ struct PlayerBar: View {
             }
             .buttonStyle(DSPress())
             .help(state.playing ? "Pause" : "Abspielen")
-            Slider(value: Binding(get: { min(state.time, max(total, 0.1)) }, set: { state.seek($0) }), in: 0...max(total, 0.1))
-                .tint(DS.accent)
-                .controlSize(.small)
+            ScrubBar(progress: total > 0 ? min(state.time / total, 1) : 0) { state.seek($0 * max(total, 0.1)) }
             Text("\(state.time.clock) / \(total > 0 ? total.clock : "–")")
                 .font(DS.font(14, .semibold)).monospacedDigit().foregroundStyle(DS.dim)
                 .fixedSize()
         }
+    }
+}
+
+/// Zeitleiste: Klick oder Ziehen springt sofort an die Stelle, ohne Gleiten
+/// (der Regler von macOS lässt den Punkt beim Klicken hinübergleiten)
+struct ScrubBar: View {
+    var progress: Double
+    var seek: (Double) -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            let x = g.size.width * min(max(progress, 0), 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(DS.line).frame(height: 4)
+                Capsule().fill(DS.accent).frame(width: x, height: 4)
+                Circle().fill(DS.text).frame(width: 14, height: 14)
+                    .offset(x: min(max(x - 7, 0), max(g.size.width - 14, 0)))
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                seek(min(max(v.location.x / max(g.size.width, 1), 0), 1))
+            })
+        }
+        .frame(height: 20)
+        .transaction { $0.animation = nil }
     }
 }
 

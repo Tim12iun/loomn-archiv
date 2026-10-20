@@ -48,6 +48,10 @@ final class AppModel: ObservableObject {
     @Published var inboxNote: String?
 
     // Bibliothek
+    /// Auswahl-Modus (Knopf oben): Klick legt Videos auf den Stapel unten links, über alle Songs hinweg
+    @Published var collecting = false
+    /// Stapel als Zwischenablage: Video-IDs in Reihenfolge des Anklickens; als Ganzes in andere Apps ziehen
+    @Published var stack: [String] = []
     @Published var filter = LibraryFilter()
     @Published var sort: SortOrder = .createdDesc
     @Published var selection: Set<String> = [] {
@@ -452,6 +456,10 @@ final class AppModel: ObservableObject {
     }
 
     func select(_ r: VideoRecord, in list: [VideoRecord]) {
+        if collecting {
+            if let i = stack.firstIndex(of: r.id) { stack.remove(at: i) } else { stack.append(r.id) }
+            return
+        }
         let mods = NSEvent.modifierFlags
         if mods.contains(.command) {
             if selection.contains(r.id) { selection.remove(r.id) } else { selection.insert(r.id) }
@@ -468,6 +476,12 @@ final class AppModel: ObservableObject {
     }
     var recent: [VideoRecord] { Array(records.sorted { $0.importedAt > $1.importedAt }.prefix(24)) }
     var selected: [VideoRecord] { records.filter { selection.contains($0.id) } }
+    var stacked: [VideoRecord] {
+        let byID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return stack.compactMap { byID[$0] }
+    }
+    /// Rahmen der Kachel: im Auswahl-Modus zeigt der Rahmen, was auf dem Stapel liegt
+    func marked(_ r: VideoRecord) -> Bool { collecting ? stack.contains(r.id) : selection.contains(r.id) }
 
     func url(_ r: VideoRecord) -> URL? { library?.paths.url(r.relPath) }
 

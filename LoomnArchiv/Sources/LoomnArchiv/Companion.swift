@@ -24,8 +24,7 @@ struct CompanionView: View {
     @ObservedObject private var dock = CompanionDock.shared
 
     var body: some View {
-        let docked = dock.docked
-        let free = fullMin && docked == nil
+        let free = fullMin && dock.docked == nil
         Group {
             if collapsed {
                 CompanionBubble { setCollapsed(false) }
@@ -38,9 +37,8 @@ struct CompanionView: View {
             if dock.moving { DS.accent.ignoresSafeArea().transition(.opacity) }
         }
         .animation(.easeOut(duration: 0.15), value: dock.moving)
-        // Bis ganz nach oben (Titelstreifen), damit die Ecken des Andockbereichs passen
-        .ignoresSafeArea(edges: .top)
-        .clipShape(RoundedRectangle(cornerRadius: docked.map { CGFloat($0.ecken) } ?? 0, style: .continuous))
+        // Hier kein clipShape oder ignoresSafeArea außen herum: das schneidet den Titelstreifen ab und
+        // die graue macOS-Leiste kommt wieder (Build 129). Ecken beim Andocken rundet CompanionDock am Fenster.
         // Kleiner geht nicht: Suchfeld und RAW, CUT, EDIT, FINAL müssen ganz zu sehen sein.
         // Angedockt bestimmt das Tool die Größe.
         .frame(minWidth: free ? CompanionFold.minSize.width : nil, minHeight: free ? CompanionFold.minSize.height : nil)

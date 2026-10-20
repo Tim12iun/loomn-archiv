@@ -9,11 +9,14 @@ struct AttributeEditor: View {
     @Binding var attrs: [Attrs]
     /// Beim Import: höchstens 3 Tags, Notiz eingeklappt
     var compact = false
+    /// Bearbeiten in der Vorschau: die gespeicherten Werte, abgewählte davon bleiben leicht orange
+    var saved: [Attrs]?
 
     private var catalog: Catalog { model.catalog }
 
     private func state(_ has: (Attrs) -> Bool) -> ChipState {
         let n = attrs.filter(has).count
+        if n == 0, let saved, !saved.isEmpty, saved.allSatisfy(has) { return .was }
         return n == 0 ? .off : (n == attrs.count ? .on : .mixed)
     }
 
@@ -48,7 +51,7 @@ struct AttributeEditor: View {
                         .foregroundStyle(st == .on ? DS.bg : DS.text)
                         .frame(maxWidth: .infinity)
                         .frame(height: DS.primary)
-                        .background(st == .on ? DS.accent : DS.surface, in: DS.shape)
+                        .background(st.fill, in: DS.shape)
                         .overlay(DS.shape.stroke(st == .mixed ? DS.accent : .clear, lineWidth: 2))
                         .contentShape(DS.shape)
                     }

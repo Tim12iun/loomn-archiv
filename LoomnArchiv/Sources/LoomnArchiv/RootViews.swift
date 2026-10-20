@@ -158,6 +158,7 @@ struct TopBar: View {
                 .allowsHitTesting(false) // Klicks gehen an die Leiste (verschieben, Doppelklick zoomt)
                 .padding(.leading, 58) // Platz für die Fensterknöpfe
             Spacer()
+            CollectButton()
             SSDStatus()
             CompanionButton()
             Button { model.showSettings = true } label: {

@@ -38,7 +38,8 @@ struct FlowLayout: Layout {
     }
 }
 
-enum ChipState { case off, on, mixed }
+/// `was`: beim Bearbeiten der bisher gespeicherte Wert, der gerade abgewählt ist (leicht orange)
+enum ChipState { case off, on, mixed, was }
 
 /// Kleiner Auswahlknopf. Gemischt (nur ein Teil der Auswahl hat ihn): orange Rahmen.
 struct Chip: View {
@@ -59,7 +60,7 @@ struct Chip: View {
             .padding(.horizontal, 12)
             .frame(height: height)
             .foregroundStyle(state == .on ? DS.bg : DS.text)
-            .background(state == .on ? DS.accent : DS.surface, in: DS.shape)
+            .background(state.fill, in: DS.shape)
             .overlay(DS.shape.stroke(state == .mixed ? DS.accent : Color.clear, lineWidth: 2))
             .contentShape(DS.shape)
         }
@@ -282,4 +283,40 @@ extension Double {
 extension Date {
     var day: String { formatted(.dateTime.day().month(.twoDigits).year()) }
     var dayTime: String { formatted(.dateTime.day().month(.twoDigits).year().hour().minute()) }
+}
+
+/// Ansicht der Video-Abschnitte für die ganze App: Reihe (seitlich scrollen) oder alle untereinander.
+/// Wird gemerkt. Die Kacheln behalten dabei ihre Größe.
+struct RowGridSwitch: View {
+    static let key = "ansicht.alleUntereinander"
+    @Binding var grid: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            item("rectangle.split.3x1", "Als Reihe", on: !grid) { grid = false }
+            item("square.grid.3x2", "Alle untereinander", on: grid) { grid = true }
+        }
+    }
+
+    private func item(_ icon: String, _ help: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 15, weight: .bold))
+                .foregroundStyle(on ? DS.bg : DS.text)
+                .frame(width: DS.control, height: DS.control)
+                .background(on ? DS.accent : DS.surface, in: DS.shape)
+                .contentShape(DS.shape)
+        }
+        .buttonStyle(DSPress())
+        .help(help)
+    }
+}
+
+extension ChipState {
+    var fill: Color {
+        switch self {
+        case .on: DS.accent
+        case .was: DS.accent.opacity(0.28)
+        default: DS.surface
+        }
+    }
 }

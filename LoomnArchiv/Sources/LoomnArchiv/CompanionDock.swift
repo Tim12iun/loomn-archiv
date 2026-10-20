@@ -71,6 +71,7 @@ final class CompanionDock: ObservableObject {
         w.backgroundColor = .clear
         CompanionFold.chrome(w, collapsed: true)
         w.contentMinSize = NSSize(width: 64, height: 16)
+        roundCorners(w, CGFloat(p.ecken))
         if w.frame != p.bereich.rect { w.setFrame(p.bereich.rect, display: true) }
         arrange(w, p, force: true)
     }
@@ -97,6 +98,15 @@ final class CompanionDock: ObservableObject {
         undock(w)
     }
 
+    /// Ecken des Andockbereichs am Fenster selbst runden (nicht in SwiftUI, siehe CompanionView)
+    private func roundCorners(_ w: NSWindow, _ r: CGFloat) {
+        guard let v = w.contentView else { return }
+        v.wantsLayer = true
+        v.layer?.cornerRadius = r
+        v.layer?.cornerCurve = .continuous
+        v.layer?.masksToBounds = r > 0
+    }
+
     private func undock(_ w: NSWindow) {
         if let p = docked { verzeichnis?.melde(LoomnAndocken.geloest, an: p) }
         docked = nil
@@ -105,6 +115,7 @@ final class CompanionDock: ObservableObject {
         w.hasShadow = true
         w.isOpaque = true
         w.backgroundColor = NSColor(DS.bg)
+        roundCorners(w, 0)
         w.level = .floating
         CompanionFold.chrome(w, collapsed: false)
         if !w.isVisible { w.orderFrontRegardless() }
