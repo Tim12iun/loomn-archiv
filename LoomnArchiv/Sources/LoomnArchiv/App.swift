@@ -93,15 +93,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Vom großen Fenster gesetzt: Kompagnon-Fenster öffnen
     @MainActor static var openCompanion: (() -> Void)?
     @MainActor static var onlyCompanion = CommandLine.arguments.contains("--nur-kompagnon")
+    /// Das große Fenster darf zu sehen sein. Nur LION selbst schaltet es ein (Dock-Symbol, Knopf im
+    /// Kompagnon). Andocken, Lösen, Einklappen oder Aktivieren der App öffnen es nie.
+    @MainActor static var mainWanted = !CommandLine.arguments.contains("--nur-kompagnon")
+    /// Kurz nach einer Andock-Bewegung zählt auch ein Reopen von macOS nicht als Wunsch nach dem Fenster
+    @MainActor static var quietUntil = Date.distantPast
+    @MainActor static func quiet() { quietUntil = Date().addingTimeInterval(2) }
+    private var watcher: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
+            // Taucht das große Fenster auf, ohne dass es gewollt ist: gleich wieder weg
+            for n in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.didChangeOcclusionStateNotification] {
+                watcher.append(NotificationCenter.default.addObserver(forName: n, object: nil, queue: .main) { note in
+                    MainActor.assumeIsolated { Self.keepMainHidden(note.object as? NSWindow) }
+                })
+            }
             guard Self.onlyCompanion, let w = WindowFinder.main else { return }
             w.alphaValue = 0
             w.orderOut(nil)
             w.alphaValue = 1
         }
     }
+
+    @MainActor static func keepMainHidden(_ w: NSWindow?) {
+        guard !mainWanted, Screenshots.requested == nil || testingMain, let w, w === WindowFinder.main, w.isVisible else { return }
+        w.orderOut(nil)
+    }
+    @MainActor static var testingMain = false
 
     func application(_ application: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated {
@@ -116,7 +135,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        let quiet = MainActor.assumeIsolated { Date() < Self.quietUntil }
+        if quiet { return false }
         MainActor.assumeIsolated {
+            Self.mainWanted = true
             if let w = WindowFinder.main, w.isVisible, !w.isMiniaturized { return }
             if let show = Self.showMain {
                 show()

@@ -119,6 +119,7 @@ final class CompanionDock: ObservableObject {
 
     /// Losgelassen: true, wenn auf einem Ziel angedockt wird. Bis die Animation fertig ist, bleibt es bei `schwebt`.
     func bubbleDropped() -> Bool {
+        AppDelegate.quiet()
         let t = hovering
         if let n = near, !same(n, t) { verzeichnis?.melde(LoomnAndocken.geloest, an: n) }
         hovering = nil
@@ -162,6 +163,7 @@ final class CompanionDock: ObservableObject {
     /// Lösen geht nur über das orange Viereck (Klick oder Herausziehen) oder durch Beenden von archivn
     private func release(_ w: NSWindow, to target: NSRect, keepHandle: Bool = false) {
         guard let p = docked, !settling else { return }
+        AppDelegate.quiet()
         if !keepHandle { handle.hide() }
         // Animation zuerst (nimmt das Bild mit den Ecken des Bereichs), dann das unsichtbare Fenster lösen
         onRelease?(target) { [weak self] in
@@ -368,6 +370,7 @@ final class DockHandle {
         }
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
+            AppDelegate.quiet()
             owner?.drag(window)
         }
     }

@@ -316,6 +316,7 @@ struct CompanionView: View {
 
     private func toggleMain() {
         if let w = WindowFinder.main, w.isVisible, !w.isMiniaturized {
+            AppDelegate.mainWanted = false
             w.orderOut(nil)
             mainShown = false
         } else {
@@ -324,6 +325,7 @@ struct CompanionView: View {
     }
 
     private func showMain() {
+        AppDelegate.mainWanted = true
         openWindow(id: "main")
         WindowFinder.main?.deminiaturize(nil)
         WindowFinder.main?.makeKeyAndOrderFront(nil)

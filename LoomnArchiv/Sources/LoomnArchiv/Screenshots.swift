@@ -216,9 +216,29 @@ enum Screenshots {
         parent.orderFrontRegardless()
         parent.makeKey()
         try? await Task.sleep(nanoseconds: 300_000_000)
-        print(grip.isAttached(to: parent) ? "Griff OK" : "FEHLER Griff: Viereck liegt nicht über dem Kompagnon")
+        var checks: [String] = []
+        checks.append(grip.isAttached(to: parent) ? "Griff OK" : "FEHLER Griff: Viereck liegt nicht über dem Kompagnon")
         grip.hide()
         parent.orderOut(nil)
+
+        // Nur-Kompagnon: Lösen oder Aktivieren darf das große Fenster nicht öffnen (Fehler bis Build 144)
+        if let main = WindowFinder.main {
+            AppDelegate.testingMain = true
+            AppDelegate.mainWanted = false
+            main.orderOut(nil)
+            AppDelegate.quiet()
+            let reopened = AppDelegate().applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            main.makeKeyAndOrderFront(nil)   // so, als hätte etwas anderes es nach vorn geholt
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            checks.append(!reopened && !main.isVisible ? "Hauptfenster OK" : "FEHLER Hauptfenster: großes Fenster ging auf")
+            AppDelegate.mainWanted = true
+            AppDelegate.testingMain = false
+            AppDelegate.quietUntil = .distantPast
+        } else {
+            checks.append("Hauptfenster übersprungen (kein Fenster)")
+        }
+        checks.forEach { print($0) }
+        try? checks.joined(separator: "\n").write(to: out.appendingPathComponent("pruefungen.txt"), atomically: true, encoding: .utf8)
         print("BILDER OK")
         exit(0)
     }

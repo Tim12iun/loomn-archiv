@@ -63,7 +63,7 @@ jobs:
           for i in $(seq 1 120); do kill -0 $pid 2>/dev/null || break; sleep 1; done
           kill $pid 2>/dev/null || true
           cat shots.log
-          mkdir -p build/Bilder && cp "$RUNNER_TEMP"/shots/Bilder/*.png build/Bilder/ || true
+          mkdir -p build/Bilder && cp "$RUNNER_TEMP"/shots/Bilder/*.png "$RUNNER_TEMP"/shots/Bilder/*.txt build/Bilder/ || true
 
       # Fertige App und Bilder in den Zweig loomn-archiv-app (zum Abholen per git)
       - name: App in Zweig ablegen
@@ -84,9 +84,9 @@ jobs:
       - name: Titelleiste und Andock-Griff prüfen
         working-directory: LoomnArchiv
         run: |
-          grep -E "^(FEHLER )?(Titelleiste|Griff)" shots.log || true
-          if grep -qE "^FEHLER (Titelleiste|Griff)" shots.log; then
-            grep -E "^FEHLER (Titelleiste|Griff)" shots.log | sed 's/^/::error::/'
+          grep -E "^(FEHLER )?(Titelleiste|Griff|Hauptfenster)" shots.log || true
+          if grep -qE "^FEHLER (Titelleiste|Griff|Hauptfenster)" shots.log; then
+            grep -E "^FEHLER (Titelleiste|Griff|Hauptfenster)" shots.log | sed 's/^/::error::/'
             exit 1
           fi
 

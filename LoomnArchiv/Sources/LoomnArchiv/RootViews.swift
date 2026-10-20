@@ -18,6 +18,7 @@ struct RootView: View {
             // Von einem Tool nur für den Kompagnon gestartet: großes Fenster bleibt zu
             if AppDelegate.onlyCompanion {
                 AppDelegate.onlyCompanion = false
+                AppDelegate.mainWanted = false
                 WindowFinder.main?.orderOut(nil)
                 if WindowFinder.companion?.isVisible != true { CompanionFold.open(openWindow) }
             } else if CompanionDock.shared.hasRequest, WindowFinder.companion?.isVisible != true {
