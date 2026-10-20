@@ -49,6 +49,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSRemovableVolumesUsageDescription</key><string>Die Mediathek liegt auf deiner externen SSD.</string>
   <key>NSNetworkVolumesUsageDescription</key><string>Die Mediathek kann auf einem Netzlaufwerk liegen.</string>
   <key>LoomnUpdateRepo</key><string>${UPDATE_REPO}</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>de.loomn.archiv.andocken</string>
+      <key>CFBundleURLSchemes</key><array><string>archivn</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

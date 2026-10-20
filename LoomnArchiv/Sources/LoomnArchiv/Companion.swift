@@ -44,10 +44,11 @@ struct CompanionView: View {
         // Angedockt bestimmt das Tool die Größe.
         .frame(minWidth: free ? CompanionFold.minSize.width : nil, minHeight: free ? CompanionFold.minSize.height : nil)
         .onAppear {
-            dock.start()
             dock.onDock = { p in dockOnto(p) }
             dock.onRelease = { target, done in suckIn(to: target, done) }
             dock.onGone = { origin in backToBubble(origin) }
+            dock.onPrepareAutoDock = { p in prepareAutoDock(p) }
+            dock.start()
             model.companionOpen = true
             refreshMain()
             if Screenshots.requested == nil { updater.start() }
@@ -69,7 +70,8 @@ struct CompanionView: View {
         if dock.docked != nil { WindowFinder.companion?.orderFrontRegardless(); return }
         collapsed = false
         fullMin = true
-        DispatchQueue.main.async { CompanionFold.restore(WindowFinder.companion) }
+        // Nicht, wenn inzwischen angedockt wird (z. B. auf Bitte eines Tools gleich nach dem Öffnen)
+        DispatchQueue.main.async { if dock.docked == nil { CompanionFold.restore(WindowFinder.companion) } }
     }
 
     /// Ein- und Aufklappen: Das echte Fenster springt unsichtbar auf die neue Größe, sichtbar ist
@@ -136,7 +138,8 @@ struct CompanionView: View {
             }
             return
         }
-        let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1, mark: 1)
+        // Kleiner als das Viereck (direkt vom Ziel aus, siehe prepareAutoDock): ohne Zeichen
+        let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1, mark: w.frame.width < CompanionFold.size ? 0 : 1)
         w.alphaValue = 0
         collapsed = false
         fullMin = false
@@ -154,6 +157,20 @@ struct CompanionView: View {
                 }
             }
         }
+    }
+
+    /// Ziel im Tool gedrückt gehalten: Der Kompagnon liegt unsichtbar als Viereck genau auf dem Ziel,
+    /// von dort fließt das Orange wie beim Hineinziehen in den Bereich.
+    private func prepareAutoDock(_ p: LoomnAndocken.Platz) {
+        guard let w = WindowFinder.companion else { return }
+        searching = false
+        collapsed = true
+        fullMin = false
+        w.alphaValue = 0
+        CompanionFold.chrome(w, collapsed: true)
+        w.contentMinSize = NSSize(width: 16, height: 16)
+        w.setFrame(p.ziel.rect, display: true)
+        w.orderFrontRegardless()
     }
 
     /// Lösen: Inhalt blendet in Orange über, die Fläche wird ins Viereck `target` gesogen, dann erscheint

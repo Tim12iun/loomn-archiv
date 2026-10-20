@@ -21,6 +21,11 @@ final class CompanionDock: ObservableObject {
     var onDock: ((LoomnAndocken.Platz) -> Void)?
     var onRelease: ((NSRect, @escaping () -> Void) -> Void)?
     var onGone: ((NSRect?) -> Void)?
+    /// Vor dem Andocken auf Bitte eines Tools: Kompagnon unsichtbar genau aufs Ziel legen
+    var onPrepareAutoDock: ((LoomnAndocken.Platz) -> Void)?
+    /// Bitte eines Tools (Ziel gedrückt gehalten): sobald seine Andockstelle bekannt ist, direkt andocken
+    private var autoDock: (prozess: Int32, fenster: Int)?
+    var hasRequest: Bool { autoDock != nil }
 
     private var verzeichnis: LoomnAndocken.Verzeichnis?
     /// Ziel, das das gezogene Viereck gerade berührt
@@ -49,7 +54,31 @@ final class CompanionDock: ObservableObject {
         v.beiPlatz = { [weak self] p in self?.update(p) }
         v.beiWeg = { [weak self] prozess, fenster in self?.gone(prozess, fenster) }
         verzeichnis = v
+        tryAutoDock()
         handle.onRelease = { [weak self] r in self?.releaseFromHandle(to: r) }
+    }
+
+    /// Tool bittet per Link um den Kompagnon an seiner Andockstelle
+    func request(prozess: Int32, fenster: Int) {
+        autoDock = (prozess, fenster)
+        ask()
+        tryAutoDock()
+    }
+
+    private func tryAutoDock() {
+        guard let a = autoDock, let v = verzeichnis, let p = v.platz(a.prozess, a.fenster), p.sichtbar,
+              let w = WindowFinder.companion, onDock != nil, !settling else { return }
+        autoDock = nil
+        if let d = docked {
+            if same(d, p) { return }
+            handle.hide()
+            verzeichnis?.melde(LoomnAndocken.geloest, an: d)
+            undock(w)
+        }
+        onPrepareAutoDock?(p)
+        hovering = p
+        near = nil
+        _ = bubbleDropped()
     }
 
     /// Alle Tools um ihre Andockstellen bitten (beim Einklappen)
@@ -172,6 +201,7 @@ final class CompanionDock: ObservableObject {
     }
 
     private func update(_ p: LoomnAndocken.Platz) {
+        if let a = autoDock, a.prozess == p.prozess, a.fenster == p.fenster { tryAutoDock() }
         if let h = hovering, same(h, p) { hovering = p }
         if let n = near, same(n, p) { near = p }
         guard let d = docked, same(d, p), let w = WindowFinder.companion else { return }

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var updater: ToolUpdater
+    @Environment(\.openWindow) private var openWindow
     @State private var dropTarget = false
 
     var body: some View {
@@ -12,6 +13,17 @@ struct RootView: View {
         // ersten Reinziehen gewählt, Fehler und Laden stehen als Leiste über dem Drop-Feld.
         main
         .windowGripMargin()
+        .onAppear {
+            AppDelegate.openCompanion = { CompanionFold.open(openWindow) }
+            // Von einem Tool nur für den Kompagnon gestartet: großes Fenster bleibt zu
+            if AppDelegate.onlyCompanion {
+                AppDelegate.onlyCompanion = false
+                WindowFinder.main?.orderOut(nil)
+                if WindowFinder.companion?.isVisible != true { CompanionFold.open(openWindow) }
+            } else if CompanionDock.shared.hasRequest, WindowFinder.companion?.isVisible != true {
+                CompanionFold.open(openWindow)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if let note = model.inboxNote {
                 HStack(spacing: 8) {

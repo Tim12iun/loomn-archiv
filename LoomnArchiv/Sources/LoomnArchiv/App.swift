@@ -85,8 +85,35 @@ struct LoomnArchivApp: App {
 }
 
 /// Klick aufs Symbol im Dock holt das große Fenster zurück, auch wenn nur der Kompagnon offen ist.
+/// Ein Tool kann archivn per Link `archivn://andocken?prozess=…&fenster=…` bitten, den Kompagnon direkt
+/// an seine Andockstelle zu legen (Ziel gedrückt halten). Mit `--nur-kompagnon` gestartet, bleibt das
+/// große Fenster zu.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static var showMain: (() -> Void)?
+    /// Vom großen Fenster gesetzt: Kompagnon-Fenster öffnen
+    @MainActor static var openCompanion: (() -> Void)?
+    @MainActor static var onlyCompanion = CommandLine.arguments.contains("--nur-kompagnon")
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            guard Self.onlyCompanion, let w = WindowFinder.main else { return }
+            w.alphaValue = 0
+            w.orderOut(nil)
+            w.alphaValue = 1
+        }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        MainActor.assumeIsolated {
+            for url in urls where url.scheme == "archivn" && url.host == "andocken" {
+                let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                guard let prozess = q.first(where: { $0.name == "prozess" })?.value.flatMap({ Int32($0) }),
+                      let fenster = q.first(where: { $0.name == "fenster" })?.value.flatMap({ Int($0) }) else { continue }
+                CompanionDock.shared.request(prozess: prozess, fenster: fenster)
+                if WindowFinder.companion?.isVisible != true { Self.openCompanion?() }
+            }
+        }
+    }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         MainActor.assumeIsolated {
