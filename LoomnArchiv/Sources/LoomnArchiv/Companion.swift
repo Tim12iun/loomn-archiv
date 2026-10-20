@@ -9,13 +9,12 @@ struct CompanionView: View {
     @EnvironmentObject var updater: ToolUpdater
     @Environment(\.openWindow) private var openWindow
     @State private var filter = LibraryFilter()
-    @State private var songID: String?
+    /// Im SONG-Modus geöffneter Song (füllt die Fläche unter den Filtern)
+    @State private var openSongID: String?
     /// SONG-Knopf: statt Videos die Songs zeigen (zum Auswählen oder als Audio rausziehen)
     @State private var songMode = false
     @State private var mainShown = true
     @FocusState private var searching: Bool
-    /// Markierter Vorschlag (Maus oder Pfeiltasten), Enter nimmt ihn
-    @State private var marked = 0
     /// Eingeklappt: nur ein kleines Viereck, das man verschieben und per Klick wieder aufklappen kann
     /// Bewusst nicht gespeichert: nach Neustart oder erneutem Öffnen kommt immer der ganze Kompagnon
     @State private var collapsed = false
@@ -222,7 +221,6 @@ struct CompanionView: View {
 
     private var list: [VideoRecord] {
         var f = filter
-        if let songID { f.songIDs = [songID] }
         return SortOrder.importedDesc.sort(f.apply(model.records))
     }
 
@@ -312,44 +310,13 @@ struct CompanionView: View {
 
     // MARK: Suche: Freitext und Songs in einem Feld
 
-    private var suggestions: [SongItem] {
-        let q = filter.text.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty, songID == nil, !songMode else { return [] }
-        return model.catalog.visibleSongs
-            .map { ($0, SongSearch.score(q, $0.title)) }
-            .filter { $0.1 > 0 }
-            .sorted { $0.1 > $1.1 }
-            .prefix(5).map(\.0)
-    }
-
+    /// Ohne SONG sucht das Feld in den Videos (auch nach Songnamen), mit SONG in den Songs
     private var search: some View {
-        let sugg = suggestions
-        return HStack(spacing: 6) {
+        HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .semibold)).foregroundStyle(DS.dim)
-            if let id = songID, let s = model.catalog.song(id) {
-                // Gewählter Song als Marke im Feld, Klick nimmt ihn wieder raus
-                Button { songID = nil } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "music.note").font(.system(size: 10, weight: .bold))
-                        Text(s.title).font(DS.font(14, .bold)).lineLimit(1)
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
-                    }
-                    .padding(.horizontal, 7)
-                    .frame(height: 22)
-                    .foregroundStyle(DS.bg)
-                    .background(DS.accent, in: DS.shape)
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-                .onDrag { model.songDragItem(s) }
-            }
-            TextField(songID == nil ? "Song oder Stichwort …" : "Stichwort …", text: $filter.text)
+            TextField(songMode ? "Song suchen …" : "Song oder Stichwort …", text: $filter.text)
                 .textFieldStyle(.plain).font(DS.font(15, .semibold))
                 .focused($searching)
-                .onSubmit { if !sugg.isEmpty { pick(sugg[min(marked, sugg.count - 1)]) } }
-                .onKeyPress(.downArrow) { marked = min(marked + 1, max(sugg.count - 1, 0)); return sugg.isEmpty ? .ignored : .handled }
-                .onKeyPress(.upArrow) { marked = max(marked - 1, 0); return sugg.isEmpty ? .ignored : .handled }
-                .onChange(of: filter.text) { _, _ in marked = 0 }
             if !filter.text.isEmpty {
                 Button { filter.text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(DS.dim) }
                     .buttonStyle(.plain)
@@ -358,45 +325,6 @@ struct CompanionView: View {
         .padding(.horizontal, 10)
         .frame(height: 32)
         .background(DS.surface, in: DS.shape)
-        // Vorschläge schweben über der Liste, nichts verschiebt sich
-        .overlay(alignment: .top) {
-            if searching, !sugg.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(sugg.enumerated()), id: \.element.id) { i, s in
-                        Button { pick(s) } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "music.note").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.accent)
-                                Text(s.title).font(DS.font(15, .bold)).lineLimit(1)
-                                Spacer(minLength: 4)
-                                // Mit Audio: lässt sich rausziehen
-                                if s.hasAudio {
-                                    Image(systemName: "waveform").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.dim)
-                                }
-                                Text("\(model.songStats.count[s.id] ?? 0)").font(DS.label).foregroundStyle(DS.dim)
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(height: 30)
-                            .listRowHover(marked: i == marked)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(DSPress())
-                        .onHover { if $0 { marked = i } }
-                        // Song direkt als Audiodatei in eine andere App ziehen
-                        .onDrag { model.songDragItem(s) }
-                    }
-                }
-                .padding(4)
-                .background(DS.surfaceHi, in: DS.shape)
-                .overlay(DS.shape.stroke(DS.line, lineWidth: 1))
-                .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
-                .offset(y: 36)
-            }
-        }
-    }
-
-    private func pick(_ s: SongItem) {
-        songID = s.id
-        filter.text = ""
     }
 
     /// RAW, CUT, EDIT, FINAL klein und gleich breit; zweiter Klick nimmt wieder raus
@@ -411,6 +339,7 @@ struct CompanionView: View {
             // SONG wählt alle anderen ab; nochmal klicken nimmt nur SONG wieder raus
             kindButton("Song", on: songMode) {
                 if !songMode { filter.kindIDs = [] }
+                openSongID = nil
                 songMode.toggle()
             }
         }
@@ -428,38 +357,31 @@ struct CompanionView: View {
         .buttonStyle(DSPress())
     }
 
-    /// Alle Songs (Suchtext filtert), zuletzt benutzte zuerst. Klick zeigt die Videos des Songs,
-    /// Ziehen nimmt die Audiodatei mit.
-    private var songList: some View {
-        let q = filter.text.trimmingCharacters(in: .whitespaces)
-        let songs = model.songsByActivity.filter { q.isEmpty || SongSearch.score(q, $0.title) > 0 }
-        return ScrollView {
-            LazyVStack(spacing: 2) {
-                ForEach(songs) { s in
-                    Button { songMode = false; pick(s) } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "music.note").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.accent)
-                            Text(s.title).font(DS.font(15, .bold)).lineLimit(1)
-                            Spacer(minLength: 4)
-                            if s.hasAudio {
-                                Image(systemName: "waveform").font(.system(size: 11, weight: .bold)).foregroundStyle(DS.dim)
-                            }
-                            Text("\(model.songStats.count[s.id] ?? 0)").font(DS.label).foregroundStyle(DS.dim)
+    /// SONG: Songs als Kacheln (Suchtext filtert), zuletzt benutzte zuerst. Klick öffnet den Song.
+    @ViewBuilder
+    private var songs: some View {
+        if let id = openSongID, let song = model.catalog.song(id) {
+            CompanionSongDetail(song: song) { openSongID = nil }
+        } else {
+            let q = filter.text.trimmingCharacters(in: .whitespaces)
+            let list = model.songsByActivity.filter { q.isEmpty || SongSearch.score(q, $0.title) > 0 }
+            if list.isEmpty {
+                Text("Kein Song").font(DS.font(16, .bold)).foregroundStyle(DS.dim)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 14) {
+                        ForEach(list) { s in
+                            CompanionSongTile(song: s)
+                                .frame(width: Self.tile)
+                                .onTapGesture { openSongID = s.id }
                         }
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        .listRowHover()
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(DSPress())
-                    .onDrag { model.songDragItem(s) }
-                }
-                if songs.isEmpty {
-                    Text("Kein Song").font(DS.font(16, .bold)).foregroundStyle(DS.dim).padding(.top, 20)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 8)
         }
     }
 
@@ -468,14 +390,7 @@ struct CompanionView: View {
     @ViewBuilder
     private var content: some View {
         VStack(spacing: 0) {
-            if songMode {
-                songList
-            } else {
-                if model.online, let id = songID, let s = model.catalog.song(id), s.hasAudio {
-                    CompanionSongStrip(song: s).padding([.horizontal, .top], 12)
-                }
-                videos
-            }
+            if songMode { songs } else { videos }
         }
     }
 
@@ -492,8 +407,7 @@ struct CompanionView: View {
             ScrollView {
                 // Feste Kachelgröße: beim Ändern der Fenstergröße ändert sich nur die Zahl der Spalten.
                 // Linksbündig und knapp, damit angedockt in schmalen Leisten möglichst viele Spalten passen.
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.tile, maximum: Self.tile), spacing: 8, alignment: .top)],
-                          alignment: .leading, spacing: 14) {
+                LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 14) {
                     ForEach(items) { r in
                         VideoTile(record: r, selected: false, compact: true)
                             .frame(width: Self.tile)
@@ -513,71 +427,7 @@ struct CompanionView: View {
 
     /// Kachelbreite im Kompagnon (zwei passen nebeneinander in 268 pt)
     static let tile: CGFloat = 120
-}
-
-/// Gewählter Song im Kompagnon: anhören, Version wählen und als Audiodatei in andere Apps ziehen
-/// (ganze Zeile). Ohne Audio gibt es die Zeile nicht.
-struct CompanionSongStrip: View {
-    @EnvironmentObject var model: AppModel
-    var song: SongItem
-    @StateObject private var player = AudioPlayer()
-    @State private var versionID: String?
-
-    private var version: SongVersion? {
-        song.versions.first { $0.id == versionID } ?? song.current
-    }
-
-    var body: some View {
-        let v = version
-        let url = v.flatMap { model.audioURL($0) }
-        let on = url != nil && player.url == url && player.playing
-        HStack(spacing: 10) {
-            Button { if let url { player.toggle(url) } } label: {
-                Image(systemName: on ? "pause.fill" : "play.fill").font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(DS.bg)
-                    .frame(width: 30, height: 30)
-                    .background(url == nil ? DS.dim : DS.accent, in: Circle())
-            }
-            .buttonStyle(DSPress())
-            .disabled(url == nil)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(song.title).font(DS.font(15, .bold)).lineLimit(1)
-                Text(detail(v, url)).font(DS.font(12, .semibold)).foregroundStyle(DS.dim).lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            if song.versions.count > 1 {
-                Menu {
-                    ForEach(song.versions.sorted { $0.number > $1.number }) { x in
-                        Button("V\(x.number)" + (x.id == song.current?.id ? " (aktuell)" : "")) {
-                            player.stop()
-                            versionID = x.id
-                        }
-                    }
-                } label: {
-                    Text("V\(v?.number ?? 0)").font(DS.font(13, .bold))
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("Version wählen")
-            }
-            Image(systemName: "hand.draw").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.dim)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 44)
-        .background(DS.surface, in: DS.shape)
-        .contentShape(DS.shape)
-        .onDrag { model.songDragItem(song, version: v) }
-        .help(url == nil ? "Audio nicht erreichbar (SSD angeschlossen?)" : "Gedrückt halten und in eine andere App ziehen")
-        .onChange(of: song.id) { _, _ in player.stop(); versionID = nil }
-        .onDisappear { player.stop() }
-    }
-
-    private func detail(_ v: SongVersion?, _ url: URL?) -> String {
-        guard let v else { return "" }
-        guard url != nil else { return "Audio nicht erreichbar" }
-        let ext = (url?.pathExtension ?? "").uppercased()
-        return ["V\(v.number)", v.duration.map(\.clock), ext].compactMap { $0 }.joined(separator: " · ")
-    }
+    static let columns = [GridItem(.adaptive(minimum: tile, maximum: tile), spacing: 8, alignment: .top)]
 }
 
 /// Die beiden Fenster der App finden (für Ein-/Ausblenden und Zurückholen)
