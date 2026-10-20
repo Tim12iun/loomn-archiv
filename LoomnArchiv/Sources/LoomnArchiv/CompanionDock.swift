@@ -121,6 +121,8 @@ final class CompanionDock: ObservableObject {
         w.hasShadow = false
         w.isOpaque = false
         w.backgroundColor = .clear
+        // Angedockt lässt sich das Fenster gar nicht verschieben (auch nicht über den Titelstreifen von macOS)
+        w.isMovable = false
         CompanionFold.chrome(w, collapsed: true)
         w.contentMinSize = NSSize(width: 64, height: 16)
         roundCorners(w, CGFloat(p.ecken))
@@ -162,6 +164,7 @@ final class CompanionDock: ObservableObject {
         vorn = nil
         settling = false
         w.hasShadow = true
+        w.isMovable = true
         w.isOpaque = true
         w.backgroundColor = NSColor(DS.bg)
         roundCorners(w, 0)

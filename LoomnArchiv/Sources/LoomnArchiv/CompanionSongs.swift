@@ -40,8 +40,8 @@ struct CompanionSongTile: View {
     }
 }
 
-/// Geöffneter Song: füllt die Fläche unter den Filtern. Oben fest die neueste Version (etwas größer),
-/// darunter scrollbar die älteren. Jede Version anhören und als Audiodatei in andere Apps ziehen.
+/// Geöffneter Song: füllt die Fläche unter den Filtern. Alle Versionen untereinander, neueste oben (orange),
+/// je eine schmale Zeile mit Wellenform. Jede Version anhören und als Audiodatei in andere Apps ziehen.
 struct CompanionSongDetail: View {
     @EnvironmentObject var model: AppModel
     var song: SongItem
@@ -63,17 +63,13 @@ struct CompanionSongDetail: View {
                 Text(song.title).font(DS.font(17, .bold)).lineLimit(1)
                 Spacer(minLength: 0)
             }
-            if let newest = sorted.first {
-                row(newest, big: true)
-            } else {
+            if sorted.isEmpty {
                 Text("Noch kein Audio").font(DS.font(15, .bold)).foregroundStyle(DS.dim)
             }
-            if sorted.count > 1 {
-                Text("Ältere Versionen").dsLabel().padding(.top, 4)
-                ScrollView {
-                    VStack(spacing: 6) {
-                        ForEach(sorted.dropFirst()) { v in row(v, big: false) }
-                    }
+            // Alle Versionen in einer Liste, neueste oben; jede eine Zeile mit Wellenform
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(sorted) { v in row(v) }
                 }
             }
             Spacer(minLength: 0)
@@ -85,42 +81,37 @@ struct CompanionSongDetail: View {
         .onDisappear { player.stop() }
     }
 
-    private func row(_ v: SongVersion, big: Bool) -> some View {
+    private func row(_ v: SongVersion) -> some View {
         let url = model.audioURL(v)
         let on = url != nil && player.url == url && player.playing
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Button { if let url { player.toggle(url) } } label: {
-                    Image(systemName: on ? "pause.fill" : "play.fill").font(.system(size: big ? 13 : 11, weight: .bold))
-                        .foregroundStyle(DS.bg)
-                        .frame(width: big ? 34 : 28, height: big ? 34 : 28)
-                        .background(url == nil ? DS.dim : DS.accent, in: Circle())
-                }
-                .buttonStyle(DSPress())
-                .disabled(url == nil)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text("V\(v.number)").font(DS.font(big ? 17 : 15, .bold))
-                        if v.id == song.current?.id { Text("aktuell").dsLabel(DS.accent) }
-                    }
-                    Text([v.added.day, v.duration.map(\.clock)].compactMap { $0 }.joined(separator: " · "))
-                        .font(DS.font(12, .semibold)).foregroundStyle(DS.dim).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "hand.draw").font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.dim)
+        let current = v.id == song.current?.id
+        return HStack(spacing: 8) {
+            Button { if let url { player.toggle(url) } } label: {
+                Image(systemName: on ? "pause.fill" : "play.fill").font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(DS.bg)
+                    .frame(width: 22, height: 22)
+                    .background(url == nil ? DS.dim : DS.accent, in: Circle())
             }
+            .buttonStyle(DSPress())
+            .disabled(url == nil)
+            Text("V\(v.number)").font(DS.font(14, .bold)).foregroundStyle(current ? DS.accent : DS.text)
+                .frame(width: 30, alignment: .leading)
             // Wellenform wie im großen Fenster: Klick springt hin und spielt
             if let url {
                 WaveformView(url: url, progress: player.url == url && player.duration > 0 ? player.time / player.duration : 0) { f in
                     player.play(url, at: f * max(player.url == url ? player.duration : (v.duration ?? 0), 0))
                 }
-                .frame(height: big ? 40 : 24)
+                .frame(height: 20)
+            } else {
+                Text("nicht erreichbar").font(DS.font(12)).foregroundStyle(DS.dim).frame(maxWidth: .infinity, alignment: .leading)
             }
+            Text(v.duration.map(\.clock) ?? "").font(DS.font(12, .semibold)).monospacedDigit().foregroundStyle(DS.dim)
         }
-        .padding(big ? 10 : 8)
+        .padding(.horizontal, 6)
+        .frame(height: 32)
         .background(DS.surface, in: DS.shape)
         .contentShape(DS.shape)
         .onDrag { model.songDragItem(song, version: v) }
-        .help(url == nil ? "Audio nicht erreichbar (SSD angeschlossen?)" : "Gedrückt halten und in eine andere App ziehen")
+        .help((current ? "Aktuelle Version · " : "") + v.added.day + " · gedrückt halten und in eine andere App ziehen")
     }
 }
