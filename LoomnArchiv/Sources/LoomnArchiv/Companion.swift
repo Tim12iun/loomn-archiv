@@ -518,7 +518,7 @@ private struct BubbleHandle: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
-            if event.clickCount == 2 { open() } else { window.performDrag(with: event) }
+            if event.clickCount == 2 { open() } else { WindowDragArea.DragView.move(window) }
         }
     }
 }
@@ -530,8 +530,8 @@ enum CompanionFold {
     static let duration = 0.22
     /// Kleinste Größe des aufgeklappten Kompagnons
     static let minSize = CGSize(width: 178, height: 300)
-    /// Standardgröße: drei Videos nebeneinander
-    static let defaultSize = CGSize(width: 390, height: 640)
+    /// Standardgröße: zwei Videos nebeneinander (von LIONs Screenshot abgemessen)
+    static let defaultSize = CGSize(width: 290, height: 445)
     /// Wird nach dem Öffnen des Kompagnon-Fensters gesendet
     static let opened = Notification.Name("kompagnon.geoeffnet")
 
@@ -539,7 +539,7 @@ enum CompanionFold {
         UserDefaults.standard.string(forKey: sizeKey).map(NSSizeFromString)
             .flatMap { $0.width >= minSize.width && $0.height >= minSize.height ? $0 : nil } ?? defaultSize
     }
-    private static let sizeKey = "kompagnon.groesse"
+    private static let sizeKey = "kompagnon.groesse2" // neuer Name: alte gemerkte Größen gelten nicht mehr
 
     /// Kompagnon einblenden, immer ausgeklappt
     static func open(_ openWindow: OpenWindowAction) {

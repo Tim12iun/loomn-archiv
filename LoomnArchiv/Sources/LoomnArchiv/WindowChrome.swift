@@ -10,7 +10,10 @@ struct WindowDragArea: NSViewRepresentable {
     /// Eigener Doppelklick statt Zoomen (Kompagnon: einklappen)
     var onDoubleClick: (() -> Void)?
 
-    func makeNSView(context: Context) -> NSView { DragView(titleBar: titleBar, onDoubleClick: onDoubleClick) }
+    func makeNSView(context: Context) -> NSView {
+        // Mit eigenem Doppelklick (Kompagnon) selbst verschieben: so greift das Andocken von macOS nicht
+        DragView(titleBar: titleBar, onDoubleClick: onDoubleClick, manual: onDoubleClick != nil)
+    }
     func updateNSView(_ v: NSView, context: Context) {
         (v as? DragView)?.titleBar = titleBar
         (v as? DragView)?.onDoubleClick = onDoubleClick
@@ -19,22 +22,38 @@ struct WindowDragArea: NSViewRepresentable {
     final class DragView: NSView {
         var titleBar: Bool
         var onDoubleClick: (() -> Void)?
-        init(titleBar: Bool, onDoubleClick: (() -> Void)?) {
+        let manual: Bool
+        init(titleBar: Bool, onDoubleClick: (() -> Void)?, manual: Bool) {
             self.titleBar = titleBar
             self.onDoubleClick = onDoubleClick
+            self.manual = manual
             super.init(frame: .zero)
         }
         required init?(coder: NSCoder) { fatalError() }
 
-        override var mouseDownCanMoveWindow: Bool { true }
+        override var mouseDownCanMoveWindow: Bool { !manual }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
             if titleBar, event.clickCount == 2 {
                 if let onDoubleClick { onDoubleClick() } else { Self.doubleClick(window) }
+            } else if manual {
+                Self.move(window)
             } else {
                 window.performDrag(with: event)
+            }
+        }
+
+        /// Fenster selbst mit der Maus mitführen, ohne das Verschieben von macOS
+        /// (das würde am Bildschirmrand das Andocken bzw. Kacheln auslösen)
+        static func move(_ window: NSWindow) {
+            let start = NSEvent.mouseLocation
+            let origin = window.frame.origin
+            while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                let p = NSEvent.mouseLocation
+                window.setFrameOrigin(NSPoint(x: origin.x + p.x - start.x, y: origin.y + p.y - start.y))
+                if e.type == .leftMouseUp { break }
             }
         }
 
