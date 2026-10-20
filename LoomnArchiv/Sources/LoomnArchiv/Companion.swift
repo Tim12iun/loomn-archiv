@@ -21,7 +21,11 @@ struct CompanionView: View {
     /// Mindestgröße des aufgeklappten Kompagnons gilt nur aufgeklappt
     @State private var fullMin = true
 
+    @ObservedObject private var dock = CompanionDock.shared
+
     var body: some View {
+        let docked = dock.docked
+        let free = fullMin && docked == nil
         Group {
             if collapsed {
                 CompanionBubble { setCollapsed(false) }
@@ -29,9 +33,21 @@ struct CompanionView: View {
                 panel
             }
         }
-        // Kleiner geht nicht: Suchfeld und RAW, CUT, EDIT, FINAL müssen ganz zu sehen sein
-        .frame(minWidth: fullMin ? CompanionFold.minSize.width : nil, minHeight: fullMin ? CompanionFold.minSize.height : nil)
+        // Angedockt: Orange darüber, solange das Tool-Fenster bewegt wird (läuft sonst sichtbar hinterher)
+        .overlay {
+            if dock.moving { DS.accent.ignoresSafeArea().transition(.opacity) }
+        }
+        .animation(.easeOut(duration: 0.15), value: dock.moving)
+        // Bis ganz nach oben (Titelstreifen), damit die Ecken des Andockbereichs passen
+        .ignoresSafeArea(edges: .top)
+        .clipShape(RoundedRectangle(cornerRadius: docked.map { CGFloat($0.ecken) } ?? 0, style: .continuous))
+        // Kleiner geht nicht: Suchfeld und RAW, CUT, EDIT, FINAL müssen ganz zu sehen sein.
+        // Angedockt bestimmt das Tool die Größe.
+        .frame(minWidth: free ? CompanionFold.minSize.width : nil, minHeight: free ? CompanionFold.minSize.height : nil)
         .onAppear {
+            dock.start()
+            dock.onDock = { p in dockOnto(p) }
+            dock.onGone = { origin in backToBubble(origin) }
             model.companionOpen = true
             refreshMain()
             if Screenshots.requested == nil { updater.start() }
@@ -50,6 +66,7 @@ struct CompanionView: View {
 
     /// Aufgeklappt in normaler Größe, egal in welchem Zustand er zugemacht wurde
     private func reopen() {
+        if dock.docked != nil { WindowFinder.companion?.orderFrontRegardless(); return }
         collapsed = false
         fullMin = true
         DispatchQueue.main.async { CompanionFold.restore(WindowFinder.companion) }
@@ -62,6 +79,8 @@ struct CompanionView: View {
         guard let w = WindowFinder.companion else { collapsed = on; fullMin = !on; return }
         if on {
             searching = false
+            dock.undockForCollapse(w)
+            dock.ask()
             let target = CompanionFold.collapseTarget(w)
             let morph = CompanionMorph(from: w.frame, snapshot: CompanionMorph.snapshot(w), orange: 0)
             w.alphaValue = 0
@@ -88,6 +107,37 @@ struct CompanionView: View {
                 morph.setSnapshot(CompanionMorph.snapshot(w))
             }
             morph.run(to: target, orange: 0) { w.alphaValue = 1 }
+        }
+    }
+
+    /// Viereck auf eine Andockstelle gezogen: aufklappen genau auf deren Bereich
+    private func dockOnto(_ p: LoomnAndocken.Platz) {
+        guard let w = WindowFinder.companion else { return }
+        let target = p.bereich.rect
+        let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1)
+        w.alphaValue = 0
+        collapsed = false
+        fullMin = false
+        dock.applyDocked(w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+            morph.setSnapshot(CompanionMorph.snapshot(w))
+        }
+        morph.run(to: target, orange: 0) { w.alphaValue = 1 }
+    }
+
+    /// Tool-Fenster zu oder Tool beendet: wieder das freie Viereck an seiner letzten freien Stelle
+    private func backToBubble(_ origin: NSPoint?) {
+        guard let w = WindowFinder.companion else { return }
+        fullMin = false
+        collapsed = true
+        CompanionFold.chrome(w, collapsed: true)
+        w.contentMinSize = NSSize(width: CompanionFold.size, height: 16)
+        let o = origin ?? NSPoint(x: w.frame.midX - CompanionFold.size / 2, y: w.frame.midY - CompanionFold.size / 2)
+        let r = CompanionFold.fitted(NSRect(x: o.x, y: o.y, width: CompanionFold.size, height: CompanionFold.size))
+        DispatchQueue.main.async {
+            w.setFrame(r, display: true)
+            CompanionFold.chrome(w, collapsed: true)
+            w.orderFrontRegardless()
         }
     }
 
@@ -136,7 +186,8 @@ struct CompanionView: View {
                 headerButtons
             }
         }
-        .padding(.leading, 86) // Platz für die Fensterknöpfe, mit etwas Luft
+        // Platz für die Fensterknöpfe, mit etwas Luft; angedockt gibt es keine
+        .padding(.leading, dock.docked == nil ? 86 : 12)
         .padding(.trailing, 12)
         .frame(height: 38)
         // Doppelklick auf die freie Leiste klappt zum Viereck ein
@@ -145,6 +196,17 @@ struct CompanionView: View {
 
     @ViewBuilder
     private var headerButtons: some View {
+            // Angedockt: wieder frei schweben lassen
+            if dock.docked != nil {
+                Button { if let w = WindowFinder.companion { dock.release(w) } } label: {
+                    Image(systemName: "rectangle.portrait.and.arrow.right").font(.system(size: 11, weight: .bold))
+                        .frame(width: 30, height: 22)
+                        .background(DS.surface, in: DS.shape)
+                        .contentShape(DS.shape)
+                }
+                .buttonStyle(DSPress())
+                .help("Lösen")
+            }
             // Zum kleinen Viereck einklappen
             Button { setCollapsed(true) } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left").font(.system(size: 11, weight: .bold))
@@ -520,7 +582,19 @@ private struct BubbleHandle: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
-            if event.clickCount == 2 { open() } else { WindowDragArea.DragView.move(window) }
+            if event.clickCount == 2 { open(); return }
+            // Selbst ziehen (kein Andocken von macOS) und dabei Andockstellen von Tools prüfen
+            let dock = CompanionDock.shared
+            let start = NSEvent.mouseLocation
+            let origin = window.frame.origin
+            dock.bubbleDragBegan(at: origin)
+            while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+                let p = NSEvent.mouseLocation
+                window.setFrameOrigin(NSPoint(x: origin.x + p.x - start.x, y: origin.y + p.y - start.y))
+                dock.bubbleMoved(center: NSPoint(x: window.frame.midX, y: window.frame.midY))
+                if e.type == .leftMouseUp { break }
+            }
+            _ = dock.bubbleDropped()
         }
     }
 }
@@ -585,6 +659,8 @@ enum CompanionFold {
         let header: CGFloat = 38
         return fit(NSRect(x: m.x - s.width / 2, y: m.y + header / 2 - s.height, width: s.width, height: s.height))
     }
+
+    static func fitted(_ r: NSRect) -> NSRect { fit(r) }
 
     /// Immer ganz auf einem Bildschirm
     private static func fit(_ r: NSRect) -> NSRect {
@@ -717,7 +793,7 @@ struct FloatingWindow: NSViewRepresentable {
     }
 
     private static func apply(_ w: NSWindow?) {
-        guard let w, w.level != .floating else { return }
+        guard let w, w.level != .floating, CompanionDock.shared.docked == nil else { return }
         w.level = .floating
         w.collectionBehavior.insert(.canJoinAllSpaces)
         w.collectionBehavior.insert(.fullScreenAuxiliary)

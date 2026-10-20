@@ -50,10 +50,15 @@ struct WindowDragArea: NSViewRepresentable {
         static func move(_ window: NSWindow) {
             let start = NSEvent.mouseLocation
             let origin = window.frame.origin
+            var p = start
             while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-                let p = NSEvent.mouseLocation
+                p = NSEvent.mouseLocation
                 window.setFrameOrigin(NSPoint(x: origin.x + p.x - start.x, y: origin.y + p.y - start.y))
                 if e.type == .leftMouseUp { break }
+            }
+            // Angedockter Kompagnon: weit genug rausgezogen löst ihn, sonst springt er zurück
+            if CompanionDock.shared.isDocked(window) {
+                CompanionDock.shared.headerDragEnded(window, distance: hypot(p.x - start.x, p.y - start.y))
             }
         }
 

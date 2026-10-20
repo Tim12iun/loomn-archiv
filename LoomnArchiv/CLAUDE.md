@@ -9,6 +9,12 @@
 - Archiv-Seite steht in `ArchivEingang.swift`: Katalog veröffentlichen, Eingang alle 5 s übernehmen
   (ohne Nachfrage), Quittung schreiben, Mediathek-Videos per Datei-Attribut mit ID und Song markieren.
 
+## Andocken (dauerhaft)
+
+- `Sources/LoomnArchiv/LoomnAndocken.swift` ist in allen Loomn-Tools wortgleich. Nie nur hier ändern.
+- Nachrichten- und Feldnamen nie umbenennen oder entfernen, nur neue optionale Felder ergänzen.
+- archivn-Seite steht in `CompanionDock.swift` (Quadrat auf Ziel ziehen, Fenster folgt, Lösen-Knopf oder Kopfzeile wegziehen).
+
 ## Gestaltung (dauerhaft, Wunsch von LION)
 
 - **Keine unnötigen Größenänderungen.** Elemente behalten ihre Größe, wenn eine Ansicht umgeschaltet wird
