@@ -38,7 +38,7 @@ struct CompanionView: View {
             AppDelegate.showMain = { showMain() }
             reopen()
         }
-        // Wieder eingeblendet (Knopf oben rechts, ⌘K): immer ausgeklappt
+        // Wieder eingeblendet (Knopf oben rechts oder Menü): immer ausgeklappt
         .onReceive(NotificationCenter.default.publisher(for: CompanionFold.opened)) { _ in reopen() }
         .onDisappear { model.companionOpen = false }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refreshMain() }
@@ -452,7 +452,7 @@ struct CompanionButton: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + (on ? 0 : 0.3)) { WindowFinder.recallCompanion() }
         })
         .fixedSize()
-        .help("Kleines Fenster, das über allen Apps bleibt (⌘K). Lange drücken holt es hierher zurück.")
+        .help("Kleines Fenster, das über allen Apps bleibt. Lange drücken holt es hierher zurück.")
     }
 }
 
@@ -694,11 +694,11 @@ final class CompanionMorph {
     }
 }
 
-/// Menüpunkt „Kompagnon“ (⌘K)
+/// Menüpunkt „Kompagnon“ (bewusst ohne Tastenkürzel, damit nichts mit anderen Apps kollidiert)
 struct CompanionMenuItem: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Button("Kompagnon") { CompanionFold.open(openWindow) }.keyboardShortcut("k")
+        Button("Kompagnon") { CompanionFold.open(openWindow) }
     }
 }
 
