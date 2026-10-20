@@ -23,3 +23,12 @@
   `VideoTile.width` bzw. `VideoTile.columns`.
 - Keine Layout-Sprünge, Animationen ruhig und kurz; Orange heißt aktiv; gleiche Höhe für alle Bedienelemente.
 - Verbindliche Design-Grundlage aller Loomn-Tools: `/mnt/project-files/Loomn Design Language/DESIGN-LANGUAGE.md`.
+
+## Versionskopf in Übergaben (dauerhaft, Wunsch von LION)
+
+- Jede Übergabe-MD an andere Loomn-Tools (Beatmosh/editn usw.) bekommt oben einen Kopf:
+  `> **Stand: archivn Update <N> · LoomnAndocken Fassung <F> · setzt editn Build <B> voraus · <Datum>**`.
+- Ersetzte Dateien oben mit **VERALTET … ersetzt durch …** markieren, nie stillschweigend liegen lassen.
+- Fügt LION einen Text aus einem anderen Tool ein: dessen Kopf mit dem aktuellen Stand vergleichen. Ist er alt
+  oder schon umgesetzt, LION darauf hinweisen statt es nochmal umzusetzen.
+- Letzter bekannter Stand: archivn Update 145, LoomnAndocken Fassung 2, editn Build 44 (20.10.2026).
