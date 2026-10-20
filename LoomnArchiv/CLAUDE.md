@@ -13,7 +13,7 @@
 
 - `Sources/LoomnArchiv/LoomnAndocken.swift` ist in allen Loomn-Tools wortgleich. Nie nur hier ändern.
 - Nachrichten- und Feldnamen nie umbenennen oder entfernen, nur neue optionale Felder ergänzen.
-- archivn-Seite steht in `CompanionDock.swift` (Quadrat auf Ziel ziehen, Fenster folgt, Lösen-Knopf oder Kopfzeile wegziehen).
+- archivn-Seite (Fassung 2) steht in `CompanionDock.swift`: Nähe melden, `angedockt` erst nach der Andock-Animation, `geloest` erst nach dem Einsaugen ins Viereck, eigenes Fenster auf dem Ziel zum Herausziehen.
 
 ## Gestaltung (dauerhaft, Wunsch von LION)
 

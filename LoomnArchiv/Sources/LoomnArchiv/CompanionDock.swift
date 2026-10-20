@@ -1,28 +1,40 @@
 import AppKit
 import SwiftUI
 
-/// Andocken des Kompagnons an ein Tool (archivn-Seite von `LoomnAndocken.swift`).
+/// Andocken des Kompagnons an ein Tool (archivn-Seite von `LoomnAndocken.swift`, Fassung 2).
 /// Das eingeklappte Viereck aufs orange Ziel eines Tools ziehen: Der Kompagnon legt sich randlos auf den
-/// gemeldeten Bereich, läuft mit, folgt Ebene und Sichtbarkeit des Tool-Fensters und lässt sich wieder lösen.
+/// gemeldeten Bereich, läuft mit, folgt Ebene und Sichtbarkeit des Tool-Fensters und lässt sich wieder lösen
+/// (Knopf, Kopfleiste herausziehen oder das Viereck auf dem Ziel herausziehen).
+/// `angedockt` geht erst nach der Andock-Animation raus, `geloest` erst nach dem Einsaugen ins Viereck.
 /// Angedockt wird nicht gespeichert: nach einem Neustart ist der Kompagnon frei.
 @MainActor
 final class CompanionDock: ObservableObject {
     static let shared = CompanionDock()
 
-    /// Andockstelle, an der der Kompagnon gerade liegt
+    /// Andockstelle, an der der Kompagnon gerade liegt (auch schon während der Andock-Animation)
     @Published private(set) var docked: LoomnAndocken.Platz?
     /// Tool-Fenster wird verschoben oder gezogen: Orange liegt über dem Kompagnon
     @Published private(set) var moving = false
 
-    /// Vom Kompagnon gesetzt: auf die Stelle aufklappen bzw. wieder zum Viereck werden
+    /// Vom Kompagnon gesetzt: auf die Stelle aufklappen (danach `dockFinished`), ins Viereck einsaugen
+    /// (danach den Abschluss aufrufen) bzw. ohne Animation wieder zum Viereck werden
     var onDock: ((LoomnAndocken.Platz) -> Void)?
+    var onRelease: ((NSRect, @escaping () -> Void) -> Void)?
     var onGone: ((NSPoint?) -> Void)?
 
     private var verzeichnis: LoomnAndocken.Verzeichnis?
+    /// Ziel, das das gezogene Viereck gerade berührt
     private var hovering: LoomnAndocken.Platz?
+    /// Nächste Andockstelle in Reichweite und zuletzt gemeldete Nähe
+    private var near: LoomnAndocken.Platz?
+    private var sentNaehe: Double?
+    private var sentState: String?
     /// Wo das Viereck frei lag, bevor es angedockt wurde
     private var freeOrigin: NSPoint?
     private var vorn: Bool?
+    /// Animation läuft: `angedockt` noch nicht gemeldet
+    private var settling = false
+    private let handle = DockHandle()
 
     func start() {
         guard verzeichnis == nil, Screenshots.requested == nil else { return }
@@ -30,6 +42,7 @@ final class CompanionDock: ObservableObject {
         v.beiPlatz = { [weak self] p in self?.update(p) }
         v.beiWeg = { [weak self] prozess, fenster in self?.gone(prozess, fenster) }
         verzeichnis = v
+        handle.onRelease = { [weak self] r in self?.releaseFromHandle(to: r) }
     }
 
     /// Alle Tools um ihre Andockstellen bitten (beim Einklappen)
@@ -39,26 +52,59 @@ final class CompanionDock: ObservableObject {
 
     // MARK: Viereck ziehen
 
-    func bubbleDragBegan(at origin: NSPoint) { freeOrigin = origin }
-
-    /// Bei jeder Bewegung: liegt die Mitte des Vierecks über einem Ziel, leuchtet es im Tool auf
-    func bubbleMoved(center: NSPoint) {
-        let t = verzeichnis?.ziel(bei: center)
-        guard !same(t, hovering) else { return }
-        if let h = hovering { verzeichnis?.melde(LoomnAndocken.geloest, an: h) }
-        if let t { verzeichnis?.melde(LoomnAndocken.schwebt, an: t) }
-        hovering = t
+    func bubbleDragBegan(at origin: NSPoint) {
+        freeOrigin = origin
+        ask()
     }
 
-    /// Losgelassen: true, wenn auf einem Ziel angedockt wird
+    /// Bei jeder Bewegung: berührt das Viereck ein Ziel, schwebt es; der nächsten Stelle in Reichweite
+    /// wird gemeldet, wie nah es ist (das Tool lässt sein Ziel entsprechend aufleuchten).
+    func bubbleMoved(frame r: NSRect) {
+        guard let v = verzeichnis else { return }
+        let touched = v.ziel(beruehrt: r)
+        let nearest = touched ?? v.plaetze.values.filter(\.sichtbar)
+            .min { LoomnAndocken.Verzeichnis.abstand(r, $0.ziel.rect) < LoomnAndocken.Verzeichnis.abstand(r, $1.ziel.rect) }
+        let n = touched != nil ? 1 : nearest.map { v.naehe(von: r, zu: $0) } ?? 0
+        let target = n > 0 ? nearest : nil
+        if let old = near, !same(old, target) {
+            v.melde(LoomnAndocken.geloest, an: old, naehe: 0)
+            sentNaehe = nil
+            sentState = nil
+        }
+        near = target
+        hovering = touched
+        guard let t = target else { return }
+        let state = touched != nil ? LoomnAndocken.schwebt : LoomnAndocken.geloest
+        if state != sentState || abs(n - (sentNaehe ?? -1)) >= 0.015 {
+            v.melde(state, an: t, naehe: n * n)
+            sentNaehe = n
+            sentState = state
+        }
+    }
+
+    /// Losgelassen: true, wenn auf einem Ziel angedockt wird. Bis die Animation fertig ist, bleibt es bei `schwebt`.
     func bubbleDropped() -> Bool {
-        guard let t = hovering else { return false }
+        let t = hovering
+        if let n = near, !same(n, t) { verzeichnis?.melde(LoomnAndocken.geloest, an: n) }
         hovering = nil
+        near = nil
+        sentNaehe = nil
+        sentState = nil
+        guard let t else { return false }
+        verzeichnis?.melde(LoomnAndocken.schwebt, an: t)
         docked = t
         vorn = nil
-        verzeichnis?.melde(LoomnAndocken.angedockt, an: t)
+        settling = true
         onDock?(t)
         return true
+    }
+
+    /// Andock-Animation fertig, Kompagnon zu sehen
+    func dockFinished() {
+        settling = false
+        guard let p = docked else { return }
+        verzeichnis?.melde(LoomnAndocken.angedockt, an: p)
+        if let w = WindowFinder.companion { handle.show(p, above: w) }
     }
 
     // MARK: Angedockt
@@ -76,26 +122,34 @@ final class CompanionDock: ObservableObject {
         arrange(w, p, force: true)
     }
 
-    /// Lösen: wieder frei schwebend, aufgeklappt in der gemerkten Größe
+    /// Lösen (Knopf, Einklappen, Kopfleiste): ins Viereck unter der Maus einsaugen
     func release(_ w: NSWindow) {
-        guard let p = docked else { return }
-        let top = NSPoint(x: w.frame.minX, y: w.frame.maxY)
+        let s = CompanionFold.size
+        let m = NSEvent.mouseLocation
+        release(w, to: CompanionFold.fitted(NSRect(x: m.x - s / 2, y: m.y - s / 2, width: s, height: s)))
+    }
+
+    private func release(_ w: NSWindow, to target: NSRect, keepHandle: Bool = false) {
+        guard let p = docked, !settling else { return }
+        if !keepHandle { handle.hide() }
+        // Animation zuerst (nimmt das Bild mit den Ecken des Bereichs), dann das unsichtbare Fenster lösen
+        onRelease?(target) { [weak self] in
+            self?.handle.hide()
+            self?.verzeichnis?.melde(LoomnAndocken.geloest, an: p)
+        }
         undock(w)
-        let s = CompanionFold.lastSize
-        w.setFrame(CompanionFold.fitted(NSRect(x: top.x, y: top.y - s.height, width: s.width, height: s.height)), display: true)
-        _ = p
+    }
+
+    /// Viereck auf dem Ziel herausgezogen: Kompagnon wird in dieses Viereck gesogen
+    private func releaseFromHandle(to r: NSRect) {
+        guard let w = WindowFinder.companion else { return }
+        release(w, to: r, keepHandle: true)
     }
 
     /// Kopfleiste angedockt gezogen: weit genug raus löst, sonst zurück auf den Bereich
     func headerDragEnded(_ w: NSWindow, distance: CGFloat) {
         guard let p = docked else { return }
         if distance > 24 { release(w) } else { w.setFrame(p.bereich.rect, display: true) }
-    }
-
-    /// Vor dem Einklappen aus dem angedockten Zustand
-    func undockForCollapse(_ w: NSWindow) {
-        guard docked != nil else { return }
-        undock(w)
     }
 
     /// Ecken des Andockbereichs am Fenster selbst runden (nicht in SwiftUI, siehe CompanionView)
@@ -107,27 +161,28 @@ final class CompanionDock: ObservableObject {
         v.layer?.masksToBounds = r > 0
     }
 
+    /// Fenster wieder frei (ohne Meldung, die kommt nach der Animation)
     private func undock(_ w: NSWindow) {
-        if let p = docked { verzeichnis?.melde(LoomnAndocken.geloest, an: p) }
         docked = nil
         moving = false
         vorn = nil
+        settling = false
         w.hasShadow = true
         w.isOpaque = true
         w.backgroundColor = NSColor(DS.bg)
         roundCorners(w, 0)
         w.level = .floating
-        CompanionFold.chrome(w, collapsed: false)
-        if !w.isVisible { w.orderFrontRegardless() }
     }
 
     private func update(_ p: LoomnAndocken.Platz) {
         if let h = hovering, same(h, p) { hovering = p }
+        if let n = near, same(n, p) { near = p }
         guard let d = docked, same(d, p), let w = WindowFinder.companion else { return }
         docked = p
         if (p.bewegt ?? false) != moving { moving = p.bewegt ?? false }
         if w.frame != p.bereich.rect { w.setFrame(p.bereich.rect, display: true) }
         arrange(w, p, force: false)
+        if !settling { handle.follow(p, above: w) }
     }
 
     /// Ebene und Sichtbarkeit wie das Tool-Fenster: Tool vorn → über allem, sonst direkt über dem Tool
@@ -150,12 +205,103 @@ final class CompanionDock: ObservableObject {
 
     private func gone(_ prozess: Int32, _ fenster: Int) {
         if let h = hovering, h.prozess == prozess, h.fenster == fenster { hovering = nil }
+        if let n = near, n.prozess == prozess, n.fenster == fenster { near = nil }
         guard let d = docked, d.prozess == prozess, d.fenster == fenster, let w = WindowFinder.companion else { return }
+        handle.hide()
         undock(w)
         onGone?(freeOrigin)
     }
 
     private func same(_ a: LoomnAndocken.Platz?, _ b: LoomnAndocken.Platz?) -> Bool {
         a?.prozess == b?.prozess && a?.fenster == b?.fenster
+    }
+}
+
+/// Kleines eigenes Fenster genau auf dem Ziel des Tools, solange angedockt: So bekommt archivn den Klick
+/// selbst. Herausziehen löst den Kompagnon, das Viereck wächst dabei mit der Entfernung zur vollen Größe.
+@MainActor
+final class DockHandle {
+    var onRelease: ((NSRect) -> Void)?
+    private var window: NSWindow?
+
+    func show(_ p: LoomnAndocken.Platz, above w: NSWindow) {
+        let win = window ?? make()
+        window = win
+        follow(p, above: w)
+    }
+
+    func follow(_ p: LoomnAndocken.Platz, above w: NSWindow) {
+        guard let win = window else { return }
+        guard p.sichtbar else { if win.isVisible { win.orderOut(nil) }; return }
+        if win.frame != p.ziel.rect { win.setFrame(p.ziel.rect, display: true) }
+        win.level = w.level
+        if w.isVisible { win.order(.above, relativeTo: w.windowNumber) }
+    }
+
+    func hide() {
+        window?.orderOut(nil)
+    }
+
+    private func make() -> NSWindow {
+        let win = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.hasShadow = false
+        win.isReleasedWhenClosed = false
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let v = HandleView()
+        v.owner = self
+        win.contentView = v
+        return win
+    }
+
+    /// Ziehen: folgt der Maus, wächst mit der Entfernung; weit genug weg löst, sonst zurück aufs Ziel
+    fileprivate func drag(_ win: NSWindow) {
+        let start = NSEvent.mouseLocation
+        let home = win.frame
+        let full = CompanionFold.size
+        var dist: CGFloat = 0
+        while let e = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let m = NSEvent.mouseLocation
+            dist = hypot(m.x - start.x, m.y - start.y)
+            let t = min(dist / 120, 1)
+            let w = home.width + (full - home.width) * t, h = home.height + (full - home.height) * t
+            let c = NSPoint(x: home.midX + m.x - start.x, y: home.midY + m.y - start.y)
+            win.setFrame(NSRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h), display: true)
+            if e.type == .leftMouseUp { break }
+        }
+        if dist > 24 {
+            let f = win.frame
+            let target = CompanionFold.fitted(NSRect(x: f.midX - full / 2, y: f.midY - full / 2, width: full, height: full))
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                win.animator().setFrame(target, display: true)
+            }
+            onRelease?(target)
+        } else {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.18
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                win.animator().setFrame(home, display: true)
+            }
+        }
+    }
+
+    private final class HandleView: NSView {
+        weak var owner: DockHandle?
+        override var isFlipped: Bool { true }
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); needsDisplay = true }
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor(DS.accent).setFill()
+            let r = min(bounds.width, bounds.height) * 0.22
+            NSBezierPath(roundedRect: bounds, xRadius: r, yRadius: r).fill()
+        }
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            owner?.drag(window)
+        }
     }
 }

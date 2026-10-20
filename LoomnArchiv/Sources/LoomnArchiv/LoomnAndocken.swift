@@ -1,6 +1,6 @@
 import AppKit
 
-/// Loomn-Andocken · Version 1
+/// Loomn-Andocken · Version 1, Fassung 2
 ///
 /// Diese Datei ist in archivn und in jedem Tool mit Andockstelle WORTGLEICH. Nur über eine neue Fassung
 /// der Übergabe „Andocken“ ändern, nie in einem einzelnen Tool. Regeln: Mitteilungen und Felder nie
@@ -11,6 +11,9 @@ import AppKit
 /// `bereich` und meldet seinen Zustand zurück (`zustand`). Alles geht als JSON-Text im `object` der
 /// Mitteilung, nie als `userInfo`: so klappt es auch mit Sandbox. Keine Systemfreigabe, kein iCloud.
 /// Maße in Punkten, Bildschirmkoordinaten von AppKit (Ursprung unten links, wie `NSWindow.frame`).
+///
+/// Fassung 2: `Zustand.naehe` (wie nah der gezogene Kompagnon am Ziel ist), dazu `Andockstelle.beiNaehe`
+/// und im `Verzeichnis` `ziel(beruehrt:)`, `naehe(von:zu:)` und `melde(_:an:naehe:)`. Fassung 1 bleibt lesbar.
 enum LoomnAndocken {
     static let andocken = 1
     static let archivBundleID = "de.loomn.archiv"
@@ -74,6 +77,9 @@ enum LoomnAndocken {
         var fenster: Int
         /// `schwebt`, `angedockt` oder `geloest`
         var zustand: String
+        /// Fassung 2: Nähe des gezogenen Kompagnons zum Ziel, 0 (weit weg) … 1 (berührt). Nur beim Ziehen gesetzt,
+        /// sonst fehlt das Feld. Ältere Tools ignorieren es.
+        var naehe: Double?
     }
 
     // MARK: - Senden und Empfangen
@@ -109,8 +115,11 @@ enum LoomnAndocken {
         private(set) var archivLaeuft = false { didSet { if archivLaeuft != oldValue { beiArchiv?(archivLaeuft) } } }
         /// Was archivn über dieses Fenster gemeldet hat: `schwebt`, `angedockt` oder `geloest`
         private(set) var zustand = LoomnAndocken.geloest { didSet { if zustand != oldValue { beiZustand?(zustand) } } }
+        /// Fassung 2: Nähe des gezogenen Kompagnons (0 … 1); nil, wenn nicht gezogen wird oder archivn sie nicht meldet
+        private(set) var naehe: Double? { didSet { if naehe != oldValue { beiNaehe?(naehe) } } }
         var beiArchiv: ((Bool) -> Void)?
         var beiZustand: ((String) -> Void)?
+        var beiNaehe: ((Double?) -> Void)?
 
         private var bereichImFenster = NSRect.zero
         private var zielImFenster = NSRect.zero
@@ -176,6 +185,7 @@ enum LoomnAndocken {
             let zustand = LoomnAndocken.empfange(.zustand, Zustand.self) { [weak self] z in
                 guard let self, z.prozess == eigen, z.fenster == self.fenster?.windowNumber else { return }
                 self.zustand = z.zustand
+                self.naehe = z.zustand == LoomnAndocken.angedockt ? nil : z.naehe
             }
             beobachter.append((dnc, frage))
             beobachter.append((dnc, zustand))
@@ -192,7 +202,7 @@ enum LoomnAndocken {
 
         private func pruefeArchiv() {
             archivLaeuft = !NSRunningApplication.runningApplications(withBundleIdentifier: LoomnAndocken.archivBundleID).isEmpty
-            if !archivLaeuft { zustand = LoomnAndocken.geloest }
+            if !archivLaeuft { zustand = LoomnAndocken.geloest; naehe = nil }
         }
 
         /// Beim Ziehen am Fenster kommt `didMove` nicht immer laufend: solange die Maus gedrückt ist,
@@ -270,8 +280,27 @@ enum LoomnAndocken {
             plaetze.values.first { $0.sichtbar && $0.ziel.rect.insetBy(dx: -spielraum, dy: -spielraum).contains(punkt) }
         }
 
-        func melde(_ zustand: String, an p: Platz) {
-            LoomnAndocken.sende(.zustand, Zustand(prozess: p.prozess, fenster: p.fenster, zustand: zustand))
+        /// Sichtbare Andockstelle, deren Ziel (mit Spielraum) die Fläche `rechteck` berührt, die nächste zuerst
+        func ziel(beruehrt rechteck: NSRect, spielraum: CGFloat = 24) -> Platz? {
+            plaetze.values
+                .filter { $0.sichtbar && $0.ziel.rect.insetBy(dx: -spielraum, dy: -spielraum).intersects(rechteck) }
+                .min { Self.abstand(rechteck, $0.ziel.rect) < Self.abstand(rechteck, $1.ziel.rect) }
+        }
+
+        /// Nähe der Fläche `rechteck` zum Ziel von `p`: 1 bei Berührung, 0 ab `reichweite` Punkten Abstand
+        func naehe(von rechteck: NSRect, zu p: Platz, reichweite: CGFloat = 320) -> Double {
+            guard p.sichtbar, reichweite > 0 else { return 0 }
+            return Double(max(0, 1 - Self.abstand(rechteck, p.ziel.rect) / reichweite))
+        }
+
+        /// Abstand zweier Flächen in Punkten, 0 wenn sie sich berühren
+        static func abstand(_ a: NSRect, _ b: NSRect) -> CGFloat {
+            let dx = max(b.minX - a.maxX, 0, a.minX - b.maxX), dy = max(b.minY - a.maxY, 0, a.minY - b.maxY)
+            return hypot(dx, dy)
+        }
+
+        func melde(_ zustand: String, an p: Platz, naehe: Double? = nil) {
+            LoomnAndocken.sende(.zustand, Zustand(prozess: p.prozess, fenster: p.fenster, zustand: zustand, naehe: naehe))
         }
 
         private func entferne(_ prozess: Int32, _ fenster: Int) {

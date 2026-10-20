@@ -45,6 +45,7 @@ struct CompanionView: View {
         .onAppear {
             dock.start()
             dock.onDock = { p in dockOnto(p) }
+            dock.onRelease = { target, done in suckIn(to: target, done) }
             dock.onGone = { origin in backToBubble(origin) }
             model.companionOpen = true
             refreshMain()
@@ -77,7 +78,8 @@ struct CompanionView: View {
         guard let w = WindowFinder.companion else { collapsed = on; fullMin = !on; return }
         if on {
             searching = false
-            dock.undockForCollapse(w)
+            // Angedockt heißt Einklappen lösen: eingesogen ins Viereck
+            if dock.docked != nil { dock.release(w); return }
             dock.ask()
             let target = CompanionFold.collapseTarget(w)
             let morph = CompanionMorph(from: w.frame, snapshot: CompanionMorph.snapshot(w), orange: 0)
@@ -108,19 +110,55 @@ struct CompanionView: View {
         }
     }
 
-    /// Viereck auf eine Andockstelle gezogen: aufklappen genau auf deren Bereich
+    /// Viereck auf eine Andockstelle gezogen: Zeichen blendet aus, das Orange legt sich aufs Ziel und
+    /// fließt mit leichtem Überschwingen in den Bereich, dann blendet der Kompagnon aus dem Orange ein.
+    /// Erst danach meldet `dockFinished` dem Tool `angedockt`.
     private func dockOnto(_ p: LoomnAndocken.Platz) {
-        guard let w = WindowFinder.companion else { return }
-        let target = p.bereich.rect
-        let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1)
+        guard let w = WindowFinder.companion else { dock.dockFinished(); return }
+        let morph = CompanionMorph(from: w.frame, snapshot: nil, orange: 1, mark: 1)
         w.alphaValue = 0
         collapsed = false
         fullMin = false
         dock.applyDocked(w)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             morph.setSnapshot(CompanionMorph.snapshot(w))
         }
-        morph.run(to: target, orange: 0) { w.alphaValue = 1 }
+        let target = p.bereich.rect
+        let zr = min(p.ziel.rect.width, p.ziel.rect.height) * 0.22
+        morph.step(frame: p.ziel.rect, mark: 0, radius: zr, duration: 0.12, curve: .easeOut) {
+            morph.step(frame: target, radius: CGFloat(p.ecken), duration: 0.35, curve: .spring(bounce: 0.18)) {
+                morph.step(orange: 0, duration: 0.2) {
+                    w.alphaValue = 1
+                    morph.finish()
+                    dock.dockFinished()
+                }
+            }
+        }
+    }
+
+    /// Lösen: Inhalt blendet in Orange über, die Fläche wird ins Viereck `target` gesogen, dann erscheint
+    /// das Zeichen. Danach ist der Kompagnon das freie Viereck; `done` meldet dem Tool `geloest`.
+    private func suckIn(to target: NSRect, _ done: @escaping () -> Void) {
+        guard let w = WindowFinder.companion else { done(); return }
+        let radius = w.contentView?.layer?.cornerRadius ?? 0
+        let morph = CompanionMorph(from: w.frame, snapshot: CompanionMorph.snapshot(w), orange: 0, mark: 0, radius: radius)
+        w.alphaValue = 0
+        searching = false
+        morph.step(orange: 1, duration: 0.12) {
+            fullMin = false
+            collapsed = true
+            CompanionFold.chrome(w, collapsed: true)
+            w.contentMinSize = NSSize(width: CompanionFold.size, height: 16)
+            w.setFrame(target, display: true)
+            morph.step(frame: target, radius: CompanionMorph.radius, duration: 0.3, curve: .easeIn) {
+                morph.step(mark: 1, duration: 0.12) {
+                    w.alphaValue = 1
+                    w.orderFrontRegardless()
+                    morph.finish()
+                    done()
+                }
+            }
+        }
     }
 
     /// Tool-Fenster zu oder Tool beendet: wieder das freie Viereck an seiner letzten freien Stelle
@@ -589,7 +627,7 @@ private struct BubbleHandle: NSViewRepresentable {
             while let e = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
                 let p = NSEvent.mouseLocation
                 window.setFrameOrigin(NSPoint(x: origin.x + p.x - start.x, y: origin.y + p.y - start.y))
-                dock.bubbleMoved(center: NSPoint(x: window.frame.midX, y: window.frame.midY))
+                dock.bubbleMoved(frame: window.frame)
                 if e.type == .leftMouseUp { break }
             }
             _ = dock.bubbleDropped()
@@ -681,10 +719,18 @@ final class CompanionMorph {
     private let overlay: NSWindow
     private let shot = CALayer()
     private let orange = CALayer()
+    private let markLayer = CALayer()
     private let origin: CGPoint
-    private static let radius: CGFloat = 10
+    static let radius: CGFloat = 10
 
-    init(from frame: NSRect, snapshot: CGImage?, orange start: Float) {
+    enum Curve {
+        case easeInOut, easeIn, easeOut
+        /// Feder mit leichtem Überschwingen
+        case spring(bounce: Double)
+    }
+
+    /// `mark`: Deckkraft des Zeichens auf dem Orange (ohne Angabe wie `orange`)
+    init(from frame: NSRect, snapshot: CGImage?, orange start: Float, mark: Float? = nil, radius: CGFloat = CompanionMorph.radius) {
         let screen = NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main
         let area = screen?.frame ?? frame
         origin = area.origin
@@ -705,7 +751,7 @@ final class CompanionMorph {
         CATransaction.setDisableActions(true)
         for l in [shot, orange] {
             l.frame = local
-            l.cornerRadius = Self.radius
+            l.cornerRadius = radius
             l.cornerCurve = .continuous
             l.masksToBounds = true
             l.contentsScale = scale
@@ -715,9 +761,14 @@ final class CompanionMorph {
         shot.backgroundColor = NSColor(DS.bg).cgColor
         shot.contents = snapshot
         orange.backgroundColor = NSColor(DS.accent).cgColor
-        orange.contentsGravity = .center
-        orange.contents = Self.mark(scale: scale)
         orange.opacity = start
+        markLayer.bounds = CGRect(x: 0, y: 0, width: CompanionFold.size, height: CompanionFold.size)
+        markLayer.position = CGPoint(x: local.midX, y: local.midY)
+        markLayer.contentsGravity = .center
+        markLayer.contentsScale = scale
+        markLayer.contents = Self.mark(scale: scale)
+        markLayer.opacity = mark ?? start
+        view.layer?.addSublayer(markLayer)
         CATransaction.commit()
         overlay.orderFrontRegardless()
         overlay.displayIfNeeded()
@@ -731,22 +782,66 @@ final class CompanionMorph {
         CATransaction.commit()
     }
 
+    /// Ein- und Aufklappen: Größe und Orange zusammen, danach ist die Animation weg
     func run(to frame: NSRect, orange end: Float, done: @escaping () -> Void) {
-        let local = Self.local(frame, origin)
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(CompanionFold.duration)
-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
-        CATransaction.setCompletionBlock { [overlay] in
-            MainActor.assumeIsolated {
-                done()
-                // Erst wenn das echte Fenster wieder sichtbar ist, die Animation wegnehmen
-                DispatchQueue.main.async { overlay.orderOut(nil) }
-            }
+        // Hält sich selbst bis zum Ende (sonst wäre das Fenster der Animation sofort weg)
+        step(frame: frame, orange: end, mark: end, duration: CompanionFold.duration) {
+            done()
+            self.finish()
         }
-        shot.frame = local
-        orange.frame = local
-        orange.opacity = end
+    }
+
+    /// Ein Schritt einer längeren Animation (Andocken, Lösen). Nicht gesetzte Werte bleiben.
+    func step(frame: NSRect? = nil, orange end: Float? = nil, mark: Float? = nil, radius: CGFloat? = nil,
+              duration: Double, curve: Curve = .easeInOut, then: @escaping () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { withExtendedLifetime(self) { then() } } }
+        if let frame {
+            let local = Self.local(frame, origin)
+            for l in [shot, orange] {
+                animate(l, "bounds", NSValue(rect: CGRect(origin: .zero, size: local.size)), duration, curve)
+                animate(l, "position", NSValue(point: CGPoint(x: local.midX, y: local.midY)), duration, curve)
+            }
+            animate(markLayer, "position", NSValue(point: CGPoint(x: local.midX, y: local.midY)), duration, curve)
+        }
+        if let radius {
+            for l in [shot, orange] { animate(l, "cornerRadius", radius as NSNumber, duration, curve) }
+        }
+        if let end { animate(orange, "opacity", end as NSNumber, duration, curve) }
+        if let mark { animate(markLayer, "opacity", mark as NSNumber, duration, curve) }
         CATransaction.commit()
+    }
+
+    /// Animation wegnehmen, sobald das echte Fenster wieder zu sehen ist
+    func finish() {
+        DispatchQueue.main.async { [overlay] in overlay.orderOut(nil) }
+    }
+
+    private func animate(_ l: CALayer, _ key: String, _ to: Any, _ duration: Double, _ curve: Curve) {
+        let from = l.presentation()?.value(forKeyPath: key) ?? l.value(forKeyPath: key)
+        let a: CABasicAnimation
+        switch curve {
+        case .spring(let bounce):
+            let sp = CASpringAnimation(perceptualDuration: duration, bounce: bounce)
+            sp.duration = sp.settlingDuration
+            a = sp
+        default:
+            a = CABasicAnimation()
+            a.duration = duration
+            a.timingFunction = CAMediaTimingFunction(name: {
+                switch curve {
+                case .easeIn: .easeIn
+                case .easeOut: .easeOut
+                default: .easeInEaseOut
+                }
+            }())
+        }
+        a.keyPath = key
+        a.fromValue = from
+        a.toValue = to
+        l.setValue(to, forKeyPath: key)
+        l.add(a, forKey: key)
     }
 
     private static func local(_ r: NSRect, _ origin: CGPoint) -> CGRect {
