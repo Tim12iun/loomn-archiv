@@ -145,7 +145,7 @@ enum SelfTest {
         tagCat.noteTags(["Sommer"])
         var tagRec = r1
         tagRec.tags = ["Bühne", "sommer"]
-        try check(TagList.all(tagCat, [tagRec]) == ["Sommer", "Bühne"], "Tags-Seite zeigt angelegte und an Videos hinterlegte Tags")
+        try check(tagCat.allTags([tagRec]) == ["Sommer", "Bühne"], "Tags-Seite zeigt angelegte und an Videos hinterlegte Tags")
         try check(r1.file.hasPrefix("2025-03-07_") && r1.file.contains("_RAW_Test-Song-Nacht_") && r1.file.hasSuffix(".mov"),
                   "Dateiname Datum_Uhrzeit_Art_Song_ID (\(r1.file))")
         let side1 = Sidecar.url(forVideo: lib.paths.url(r1.relPath))

@@ -277,18 +277,9 @@ struct RenameField: View {
 struct TagList: View {
     @EnvironmentObject var model: AppModel
 
-    /// Alle hinterlegten Tags: aus der Liste und von den Videos (falls einer dort noch fehlt)
-    static func all(_ catalog: Catalog, _ records: [VideoRecord]) -> [String] {
-        var out = catalog.tags
-        for t in records.flatMap(\.tags) where !out.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) {
-            out.append(t)
-        }
-        return out
-    }
-
     var body: some View {
         let counts = Dictionary(grouping: model.records.flatMap(\.tags), by: { $0.lowercased() }).mapValues(\.count)
-        let tags = Self.all(model.catalog, model.records)
+        let tags = model.catalog.allTags(model.records)
         Text("Tags").font(DS.big)
         if tags.isEmpty {
             Text("Noch keine Tags. Lege hier einen an oder tippe ihn in der Vorschau eines Videos ein.")

@@ -468,6 +468,15 @@ struct Catalog: Codable, Equatable {
     mutating func removeSong(_ id: String) { songs.removeAll { $0.id == id } }
     mutating func removeTag(_ t: String) { tags.removeAll { $0.caseInsensitiveCompare(t) == .orderedSame } }
 
+    /// Alle hinterlegten Tags: aus der Liste und von den Videos (falls einer dort noch fehlt)
+    func allTags(_ records: [VideoRecord]) -> [String] {
+        var out = tags
+        for t in records.flatMap(\.tags) where !out.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) {
+            out.append(t)
+        }
+        return out
+    }
+
     mutating func noteTags(_ used: [String]) {
         for t in used.reversed() {
             tags.removeAll { $0.caseInsensitiveCompare(t) == .orderedSame }
