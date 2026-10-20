@@ -320,13 +320,14 @@ struct SongPage: View {
             if list.isEmpty {
                 Text("Noch keine").font(DS.font(16)).foregroundStyle(DS.line).frame(height: 30)
             } else if open {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: DS.margin)], spacing: DS.margin) {
-                    ForEach(list) { r in tile(r, in: list) }
+                // Gleiche Kachelbreite wie in der Reihe: beim Umschalten ändert sich keine Größe
+                LazyVGrid(columns: VideoTile.columns, alignment: .leading, spacing: DS.margin) {
+                    ForEach(list) { r in tile(r, in: list).frame(width: VideoTile.width) }
                 }
             } else {
                 ScrollView(.horizontal, showsIndicators: true) {
                     LazyHStack(alignment: .top, spacing: DS.margin) {
-                        ForEach(list) { r in tile(r, in: list).frame(width: 160) }
+                        ForEach(list) { r in tile(r, in: list).frame(width: VideoTile.width) }
                     }
                     .padding(.bottom, 6)
                 }
@@ -348,6 +349,11 @@ struct SongPage: View {
 // MARK: - Kachel mit Vorschau beim Drüberfahren
 
 struct VideoTile: View {
+    /// Eine feste Kachelbreite im großen Fenster (Reihe, Raster, alle Videos): Umschalten, Vorschau
+    /// öffnen oder Fenstergröße ändern verändert nur die Zahl der Spalten, nie die Kachelgröße.
+    static let width: CGFloat = 190
+    static let columns = [GridItem(.adaptive(minimum: width, maximum: width), spacing: DS.margin, alignment: .top)]
+
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var thumbs: ThumbStore
     var record: VideoRecord
@@ -447,9 +453,10 @@ struct LibraryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170, maximum: 230), spacing: DS.margin)], spacing: DS.margin) {
+                        LazyVGrid(columns: VideoTile.columns, alignment: .leading, spacing: DS.margin) {
                             ForEach(list) { r in
                                 VideoTile(record: r, selected: model.selection.contains(r.id))
+                                    .frame(width: VideoTile.width)
                                     // Ein Klick wählt sofort (ohne auf einen Doppelklick zu warten), der zweite öffnet
                                     .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } else { model.select(r, in: list) } }
                                     .contextMenu { menu(r) }

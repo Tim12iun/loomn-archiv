@@ -320,9 +320,11 @@ struct CompanionView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112, maximum: 170), spacing: 10)], spacing: 14) {
+                // Feste Kachelgröße: beim Ändern der Fenstergröße ändert sich nur die Zahl der Spalten
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 128, maximum: 128), spacing: 10, alignment: .top)], spacing: 14) {
                     ForEach(items) { r in
                         VideoTile(record: r, selected: false, compact: true)
+                            .frame(width: 128)
                             .onTapGesture { if NSApp.currentEvent?.clickCount == 2 { model.openVideo(r) } }
                             .contextMenu {
                                 Button("Öffnen") { model.openVideo(r) }
