@@ -491,7 +491,8 @@ final class LoomnFoldMorph {
             MainActor.assumeIsolated {
                 withExtendedLifetime(self) {
                     done()
-                    DispatchQueue.main.async { [overlay] in overlay.orderOut(nil) }
+                    let overlay = self.overlay
+                    DispatchQueue.main.async { overlay.orderOut(nil) }
                 }
             }
         }
