@@ -43,6 +43,11 @@ jobs:
           grep -E "error:" build.log | sed -E 's#^.*/Sources/LoomnArchiv/##' | sort -u | head -30 | sed 's/^/::error::/'
           exit $rc
 
+      # Baustein zum Mitnehmen (Einklappen + Kompagnon) muss für sich allein bauen
+      - name: Baustein LoomnEinklappen bauen
+        working-directory: LoomnArchiv/Extras/LoomnEinklappen
+        run: swift build 2>&1 | tee build.log; grep -E "error:" build.log | sed 's/^/::error::/'; exit ${PIPESTATUS[0]}
+
       - name: Selbsttest (Ablage, Begleitdateien, Index, Duplikate, Suche, Umzug)
         working-directory: LoomnArchiv
         run: |
