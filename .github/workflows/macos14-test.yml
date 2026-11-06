@@ -1,8 +1,8 @@
 name: archivn auf macOS 14 prüfen
 
 # Baut archivn wie der normale Build (neues Xcode, Ziel macOS 14) und startet genau diese App
-# auf einem echten macOS-14-Rechner (Sonoma): Selbsttest, Oberfläche, Kompagnon, Titelleiste.
-# Veröffentlicht nichts (kein Release, kein App-Zweig).
+# Prüft, dass das Programm ab macOS 14 (Sonoma) startet (minos 14.0, nur Bibliotheken, die es dort gibt).
+# Einen echten macOS-14-Rechner bietet GitHub nicht mehr an. Veröffentlicht kein Release.
 
 on:
   workflow_dispatch:
@@ -19,6 +19,8 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Versionen
@@ -38,49 +40,17 @@ jobs:
           lipo -archs build/archivn.app/Contents/MacOS/LoomnArchiv
           # Verlinkte Bibliotheken: nichts, was es erst ab macOS 15 gibt
           otool -L build/archivn.app/Contents/MacOS/LoomnArchiv
-      - uses: actions/upload-artifact@v4
-        with:
-          name: archivn-zip
-          path: LoomnArchiv/build/LoomnArchiv.zip
-          retention-days: 30
+      # Fertige ZIP in den Zweig archivn-macos14-app (zum Abholen per git), kein Release
+      - name: App in Zweig ablegen
+        working-directory: LoomnArchiv
+        run: |
+          out=$(mktemp -d)
+          cp build/LoomnArchiv.zip vtool.txt "$out/"
+          echo "Build ${BUILD:-153} · ${GITHUB_SHA} · minos 14.0" > "$out/BUILD.txt"
+          cd "$out"
+          git init -q -b archivn-macos14-app
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A && git commit -qm "archivn macOS 14 Build"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" archivn-macos14-app
 
-  sonoma:
-    needs: build
-    runs-on: macos-14
-    timeout-minutes: 20
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: archivn-zip
-      - name: Auspacken
-        run: ditto -x -k LoomnArchiv.zip . && sw_vers && codesign --verify --verbose archivn.app
-      - name: Selbsttest auf macOS 14
-        run: |
-          set +e
-          archivn.app/Contents/MacOS/LoomnArchiv --selftest "$RUNNER_TEMP/selftest" > selftest.log 2>&1
-          rc=$?
-          cat selftest.log
-          [ $rc -ne 0 ] && tail -5 selftest.log | sed 's/^/::error::/'
-          exit $rc
-      - name: Oberfläche auf macOS 14 (Bildschirmfotos, Kompagnon, Titelleiste)
-        run: |
-          archivn.app/Contents/MacOS/LoomnArchiv --screenshots "$RUNNER_TEMP/shots" > shots.log 2>&1 &
-          pid=$!
-          for i in $(seq 1 120); do kill -0 $pid 2>/dev/null || break; sleep 1; done
-          kill $pid 2>/dev/null || true
-          cat shots.log
-          mkdir -p Bilder && cp "$RUNNER_TEMP"/shots/Bilder/*.png "$RUNNER_TEMP"/shots/Bilder/*.txt Bilder/ || true
-          if grep -qE "^FEHLER (Titelleiste|Griff|Hauptfenster)" shots.log; then
-            grep -E "^FEHLER (Titelleiste|Griff|Hauptfenster)" shots.log | sed 's/^/::error::/'
-            exit 1
-          fi
-          grep -qiE "crash|fatal error|dyld|Symbol not found" shots.log && exit 1 || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: sonoma-ergebnis
-          path: |
-            selftest.log
-            shots.log
-            Bilder/
-          retention-days: 14
