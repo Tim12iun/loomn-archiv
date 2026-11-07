@@ -43,6 +43,7 @@ extension AppModel {
 
     /// Eingang prüfen (beim Start und alle 5 Sekunden). Ohne SSD bleibt alles liegen.
     func checkInbox() {
+        checkExports()
         guard online, !inboxRunning, library != nil, Screenshots.requested == nil else { return }
         inboxRunning = true
         Task {

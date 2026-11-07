@@ -314,6 +314,94 @@ enum SelfTest {
                   "Sicherung vor dem Anheben")
 
         try await lidar(dir)
+        try await exportNachArchivn(dir)
+    }
+
+    /// „Export direkt nach archivn“: Annahme nur aus `An archivn`, Zuordnung von Song und Ausgangsclips,
+    /// Übernahme als EDIT, Video und Begleitdatei danach im Übergabe-Ordner weg, Antwort-JSON.
+    static func exportNachArchivn(_ dir: URL) async throws {
+        print("Export nach archivn")
+        let fm = FileManager.default
+        let ssd = dir.appendingPathComponent("SSD-E", isDirectory: true)
+        let fremd = dir.appendingPathComponent("Downloads", isDirectory: true)
+        let an = dir.appendingPathComponent("editn/\(ExportAnnahme.ordnerName)", isDirectory: true)
+        try fm.createDirectory(at: ssd, withIntermediateDirectories: true)
+        try fm.createDirectory(at: fremd, withIntermediateDirectories: true)
+        try fm.createDirectory(at: an, withIntermediateDirectories: true)
+        let lib = try Library.create(in: ssd)
+        var cat = await lib.currentCatalog()
+        let song = cat.songNamed("Nachtfahrt")
+        let zoomOut = cat.formats.first { $0.name == "Zoom-out" }!
+        let ruhig = cat.moods.first { $0.name == "ruhig" }!
+        try await lib.setCatalog(cat)
+
+        // Ausgangsclip im Archiv
+        let clip = fremd.appendingPathComponent("IMG_0412.MOV")
+        try await makeVideo(clip, hue: 0.2, creation: "2026-11-01T10:00:00+01:00", loomnTake: false)
+        guard case .imported(let quelle) = try await Importer.importFile(
+            clip, sha: nil, attrs: Attrs(kindID: Kind.raw, songIDs: [song.id], formatID: zoomOut.id, moodIDs: [ruhig.id], tags: ["Sommer"]),
+            into: lib) else { throw Fail("Ausgangsclip") }
+
+        // Export von editn
+        let name = "Sommer Edit 2026-11-07 18-30.mp4"
+        let video = an.appendingPathComponent(name)
+        try await makeVideo(video, hue: 0.7, creation: nil, loomnTake: false, type: .mp4)
+        let json = #"{"loomnExport":1,"tool":"moshn","toolName":"editn","toolBuild":102,"erstellt":"2026-11-07T18:30:12+01:00","datei":"\#(name)","titel":"Sommer Edit","projekt":{"name":"Sommer Edit","pfad":"/x/Sommer Edit.beatmosh"},"video":{"breite":320,"hoehe":180,"format":"16:9","dauer":2,"fps":10,"ton":false,"codec":"h264"},"bereich":null,"song":{"name":"track.mp3","pfad":"/gibt/es/nicht.mp3","archivId":"Nachtfahrt · LION","bpm":124},"quellen":[{"name":"IMG_0412.MOV","pfad":"/x/IMG_0412.MOV","archivId":"\#(quelle.id)"}],"rueckweg":"\#(an.path)/","neuesFeld":true}"#
+        try Data(json.utf8).write(to: ExportAnnahme.begleitdatei(zu: video))
+
+        // Abgelehnt: falscher Ordner, fehlende oder fremde Begleitdatei
+        let draussen = fremd.appendingPathComponent(name)
+        try fm.copyItem(at: video, to: draussen)
+        try fm.copyItem(at: ExportAnnahme.begleitdatei(zu: video), to: ExportAnnahme.begleitdatei(zu: draussen))
+        try check((try? ExportAnnahme.pruefe(draussen)) == nil, "Export außerhalb von „An archivn“ abgelehnt")
+        let ohne = an.appendingPathComponent("ohne Begleitdatei.mp4")
+        try fm.copyItem(at: video, to: ohne)
+        try check((try? ExportAnnahme.pruefe(ohne)) == nil, "Export ohne Begleitdatei abgelehnt")
+        let falsch = an.appendingPathComponent("anderer Name.mp4")
+        try fm.copyItem(at: video, to: falsch)
+        try fm.copyItem(at: ExportAnnahme.begleitdatei(zu: video), to: ExportAnnahme.begleitdatei(zu: falsch))
+        try check((try? ExportAnnahme.pruefe(falsch)) == nil, "Begleitdatei einer anderen Datei abgelehnt")
+
+        let fund = try ExportAnnahme.pruefe(video)
+        try check(fund.begleitung.toolName == "editn" && fund.roh["neuesFeld"] != nil, "Begleitdatei gelesen, unbekannte Felder bleiben")
+        try check(ExportAnnahme.empfaenger(fund.begleitung) == "com.loomn.beatmosh", "Antwort geht an editn")
+        try check(ExportAnnahme.liegengeblieben(in: [an], alter: 0).map(\.lastPathComponent).contains(name),
+                  "Liegengebliebener Export wird gefunden")
+
+        // Zuordnung
+        cat = await lib.currentCatalog()
+        let all = try await lib.allRecords()
+        let plan = ExportAnnahme.plan(fund.begleitung, catalog: cat, records: all, attribut: { _, _ in nil })
+        try check(plan.songID == song.id, "Song aus der Archiv-Markierung („Nachtfahrt · LION“)")
+        try check(plan.herkunft == [quelle.id] && plan.formatID == zoomOut.id && plan.moodIDs == [ruhig.id] && plan.tags == ["Sommer"],
+                  "Format, Mood und Tags vom Ausgangsclip")
+        try check(plan.beschreibung == "Sommer Edit" && plan.projekt == "Sommer Edit", "Titel und Projekt")
+        var ohneSong = fund.begleitung
+        ohneSong.song = nil
+        try check(ExportAnnahme.plan(ohneSong, catalog: cat, records: all, attribut: { _, _ in nil }).songID == song.id,
+                  "Ohne Song: Song der Ausgangsclips")
+
+        // Übernahme
+        var a = Attrs()
+        a.kindID = Kind.edit
+        a.songIDs = plan.songID.map { [$0] } ?? []
+        a.formatID = plan.formatID
+        a.moodIDs = plan.moodIDs
+        a.tags = plan.tags
+        a.description = plan.beschreibung
+        let (id, ort) = try await ExportAnnahme.uebernimm(fund, attrs: a, projekt: Ref(id: "p1", name: "Sommer Edit"),
+                                                          herkunft: plan.herkunft, into: lib)
+        guard let neu = try await lib.allRecords().first(where: { $0.id == id }) else { throw Fail("Export nicht im Archiv") }
+        try check(neu.kind.id == Kind.edit && neu.songs.first?.id == song.id && neu.project?.name == "Sommer Edit"
+                  && neu.description == "Sommer Edit", "Export als EDIT mit Song und Projekt im Archiv")
+        try check(neu.source?["herkunft"] == .array([.string(quelle.id)]) && neu.source?["werkzeug"]?.string == "editn",
+                  "Herkunft und Tool vermerkt")
+        try check(fm.fileExists(atPath: ort.path) && !fm.fileExists(atPath: video.path)
+                  && !fm.fileExists(atPath: ExportAnnahme.begleitdatei(zu: video).path), "Verschoben: im Übergabe-Ordner nichts mehr")
+        let antwort = ExportAnnahme.antwortJSON(datei: name, ok: true, id: id, ort: ort)
+        let gelesen = try JSONSerialization.jsonObject(with: Data(antwort.utf8)) as? [String: Any]
+        try check(gelesen?["ok"] as? Bool == true && gelesen?["id"] as? String == id && gelesen?["loomnExport"] as? Int == 1,
+                  "Antwort-JSON")
     }
 
     // MARK: LiDAR (Tiefen-Takes aus Loomn Cam)

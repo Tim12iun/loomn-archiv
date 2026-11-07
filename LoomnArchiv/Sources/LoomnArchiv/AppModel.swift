@@ -85,6 +85,11 @@ final class AppModel: ObservableObject {
     var inboxRunning = false
     /// Lieferungen, die schon einmal gescheitert sind: erst nach einem Neustart wieder versuchen
     var inboxFailed: Set<String> = []
+    /// Exporte aus den Tools (`archivn://aufnehmen`): wartend, gerade in Arbeit, gescheitert (erst nach Neustart wieder)
+    var exportQueue: [String] = []
+    var exportBusy: Set<String> = []
+    var exportFailed: Set<String> = []
+    var exportRunning = false
     private var cacheSaveTask: Task<Void, Never>?
 
     var build: Int { Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0 }
@@ -116,6 +121,10 @@ final class AppModel: ObservableObject {
             MainActor.assumeIsolated { self?.checkInbox() }
         }
         reconnect()
+        AppDelegate.model = self
+        let wartend = AppDelegate.pendingExports
+        AppDelegate.pendingExports = []
+        for u in wartend { aufnehmen(u) }
     }
 
     // MARK: - Mediathek finden und öffnen
