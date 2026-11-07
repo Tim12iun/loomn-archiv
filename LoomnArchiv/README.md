@@ -29,6 +29,14 @@ Loomn Archiv/
 - Fehlt der Index oder ist er beschädigt, wird er aus den Begleitdateien neu gebaut. Fehlt der Katalog, wird er aus den Begleitdateien ergänzt. Ältere Mediatheken werden angehoben (vorher Sicherung), neuere werden nicht angerührt.
 - Ohne SSD: Blättern und Suchen aus einer Kopie von Index und Vorschauen auf dem Mac (`~/Library/Caches/Loomn Archiv/`), Importieren erst mit SSD.
 
+## LiDAR-Clips (Tiefen-Takes aus Loomn Cam)
+
+- Erkannt über die Take-Beschreibung (`de.loomn.take`, `"kind": "depth"`) oder eine Loomn-Box in der Datei. LiDAR-Clips sind immer **RAW**; beim Import wird RAW automatisch gewählt. Neben dem RAW-Knopf (Bibliothek, Suche, Kompagnon) zeigt das LiDAR-Symbol nur die LiDAR-Clips, ohne es zeigt RAW alle.
+- Ab Loomn Cam 0.26 steckt die Tiefe verlustfrei in der .mov (Loomn-Boxen `uuid`/„loomn-sidecar“ am Dateiende: `ldepth`, `obj`, `lmatte`). Merkmal in Liste und Details: „Tiefe verlustfrei“ (mit Auflösung aus dem `LDEP`-Kopf), sonst „nur Videospur (1 cm)“, bei kaputter Box „Tiefe beschädigt“. Angaben stehen in der Begleitdatei unter `source.loomnDepth`.
+- Die .mov wird nur 1:1 kopiert, der Fingerabdruck geht über die ganze Datei. Nie remuxen, umkodieren oder Metadaten schreiben. Vorschauen sind nur Vorschau.
+- Alte Takes: `.ldepth`, `.obj`, `.lmatte` daneben gehören zum selben Eintrag (geprüft mitkopiert, gleicher Name, wandern beim Umbenennen mit). Liegt der Inhalt auch als Box in der .mov, wird die Datei als überzählig gemeldet, nie gelöscht.
+- `…_Tiefen-Paket.zip` wird angenommen (takeId aus `take.json`). Gleiche takeId wie eine .mov: dieselbe Aufnahme, das Paket wird im Importfenster abgewählt, die .mov bevorzugt.
+
 ## Umzug auf einen anderen Mac
 
 App auf den neuen Mac ziehen, SSD anstecken, **Vorhandene Mediathek öffnen** und den Ordner wählen. Kein Video wird kopiert. Die App findet die Mediathek über ihre Kennung, auch unter einem anderen Pfad.
@@ -51,6 +59,7 @@ Sources/LoomnArchiv/
   Library.swift          Mediathek anlegen/öffnen/anheben, Index-Neubau, Eintragen, Bearbeiten
   Index.swift            SQLite-Suchindex
   Importer.swift         Dateinamen, Fingerabdruck, geprüfte Kopie, Metadaten
+  Tiefe.swift            LiDAR-Clips: Loomn-Boxen in der .mov, Begleitdateien, Tiefen-Paket
   Query.swift            Kombinierte Suche und Sortierung
   Locator.swift          Mediathek über ID finden, Offline-Kopie, Umzug
   Previews.swift         Standbild und Bildreihe für die Vorschau

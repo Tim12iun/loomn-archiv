@@ -70,18 +70,24 @@ struct Chip: View {
 }
 
 /// RAW, CUT, EDIT, FINAL als Filterknöpfe. Keiner an = alle zeigen; jeder Klick nimmt eine Art
-/// dazu oder wieder weg. Aktive Knöpfe leuchten orange.
+/// dazu oder wieder weg. Aktive Knöpfe leuchten orange. Direkt neben RAW das LiDAR-Symbol:
+/// zeigt nur LiDAR-Clips (die immer RAW sind); ohne es zeigt RAW alle, auch die LiDAR-Clips.
 struct KindFilter: View {
     var kinds: [ListItem]
     @Binding var selected: Set<String>
     var counts: [String: Int] = [:]
+    var lidar: Binding<Bool>? = nil
+    var lidarCount: Int? = nil
 
     var body: some View {
         HStack(spacing: 8) {
             ForEach(kinds) { k in
                 let on = selected.contains(k.id)
                 Button {
-                    if on { selected.remove(k.id) } else { selected.insert(k.id) }
+                    if on {
+                        selected.remove(k.id)
+                        if k.id == Kind.raw, let lidar { lidar.wrappedValue = false }
+                    } else { selected.insert(k.id) }
                 } label: {
                     HStack(spacing: 6) {
                         Text(k.name).font(DS.font(17, .bold)).tracking(0.8)
@@ -96,12 +102,33 @@ struct KindFilter: View {
                 }
                 .buttonStyle(DSPress())
                 .fixedSize()
+                if k.id == Kind.raw, let lidar { lidarButton(lidar) }
             }
-            if !selected.isEmpty {
-                Button { selected = [] } label: { Text("Alle").dsLabel(DS.accent).frame(height: DS.control) }
+            if !selected.isEmpty || lidar?.wrappedValue == true {
+                Button { selected = []; if let lidar { lidar.wrappedValue = false } } label: { Text("Alle").dsLabel(DS.accent).frame(height: DS.control) }
                     .buttonStyle(.plain).padding(.leading, 4)
             }
         }
+    }
+
+    private func lidarButton(_ lidar: Binding<Bool>) -> some View {
+        let on = lidar.wrappedValue
+        return Button {
+            lidar.wrappedValue.toggle()
+            // Nur LiDAR heißt: nur die RAW-Reihe (LiDAR-Clips sind immer RAW)
+            if lidar.wrappedValue { selected = [Kind.raw] }
+        } label: {
+            Image(systemName: LoomnDepth.symbol).font(.system(size: 15, weight: .semibold))
+                .frame(width: DS.control, height: DS.control)
+                .foregroundStyle(on ? DS.bg : DS.text)
+                .background(on ? DS.accent : DS.surface, in: DS.shape)
+                .overlay(DS.shape.stroke(on ? DS.accent : DS.line, lineWidth: 1))
+                .shadow(color: on ? DS.accent.opacity(0.45) : .clear, radius: 8)
+                .contentShape(DS.shape)
+        }
+        .buttonStyle(DSPress())
+        .fixedSize()
+        .help(lidarCount.map { "Nur LiDAR-Clips (\($0))" } ?? "Nur LiDAR-Clips")
     }
 }
 
