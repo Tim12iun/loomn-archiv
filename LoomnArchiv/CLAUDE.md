@@ -9,6 +9,16 @@
 - Archiv-Seite steht in `ArchivEingang.swift`: Katalog veröffentlichen, Eingang alle 5 s übernehmen
   (ohne Nachfrage), Quittung schreiben, Mediathek-Videos per Datei-Attribut mit ID und Song markieren.
 
+## Export direkt nach archivn (dauerhaft, Übergabe editn Nr. 4)
+
+- `Sources/LoomnArchiv/ExportAnnahme.swift`: `archivn://aufnehmen?datei=…` nimmt nur Videos aus einem Ordner
+  `An archivn` mit `<datei>.loomn.json` daneben (`"loomnExport"`, `datei` passt). Übernahme ohne Nachfrage als EDIT,
+  Song/Format/Moods/Tags aus Begleitdatei und Ausgangsclips, geprüfte Kopie, danach Video + Begleitdatei im
+  Übergabe-Ordner löschen (= verschieben). Antwort `de.loomn.archiv.aufgenommen` (DistributedNotificationCenter,
+  `userInfo["json"]`). `archivn://zeigen?id=…` zeigt den Eintrag. Liegengebliebenes alle 5 s aus den gemerkten
+  `An archivn`-Ordnern und `~/Library/Application Support/Loomn/An archivn/`.
+- Feldnamen der Begleitdatei und Antwort nie umbenennen oder entfernen, nur optionale Felder ergänzen.
+
 ## Andocken (dauerhaft)
 
 - `Sources/LoomnArchiv/LoomnAndocken.swift` ist in allen Loomn-Tools wortgleich. Nie nur hier ändern.

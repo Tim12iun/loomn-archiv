@@ -121,9 +121,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.orderOut(nil)
     }
     @MainActor static var testingMain = false
+    /// Das Modell, sobald es steht; Exporte, die vorher per Link kommen, warten in `pendingExports`
+    @MainActor static weak var model: AppModel?
+    @MainActor static var pendingExports: [URL] = []
 
     func application(_ application: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated {
+            for url in urls where url.scheme == "archivn" && url.host == "aufnehmen" {
+                // Export aus einem Tool: ohne Fenster, ohne Nachfrage (siehe ExportAnnahme.swift)
+                let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                guard let pfad = q.first(where: { $0.name == "datei" })?.value, pfad.hasPrefix("/") else { continue }
+                let datei = URL(fileURLWithPath: pfad)
+                if let model = Self.model { model.aufnehmen(datei) } else { Self.pendingExports.append(datei) }
+            }
+            for url in urls where url.scheme == "archivn" && url.host == "zeigen" {
+                let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                guard let id = q.first(where: { $0.name == "id" })?.value, !id.isEmpty else { continue }
+                Self.model?.zeige(id: id)
+            }
             for url in urls where url.scheme == "archivn" && url.host == "andocken" {
                 let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
                 guard let prozess = q.first(where: { $0.name == "prozess" })?.value.flatMap({ Int32($0) }),

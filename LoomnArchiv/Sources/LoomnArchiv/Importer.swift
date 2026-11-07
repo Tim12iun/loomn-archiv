@@ -245,7 +245,7 @@ enum Importer {
     /// Kopiert ein Video in die Mediathek: Fingerabdruck, Duplikat-Prüfung, geprüfte Kopie in den
     /// Tagesordner, Begleitdatei, Index. Das Original bleibt unverändert.
     static func importFile(_ src: URL, sha knownSHA: String?, attrs: Attrs, into lib: Library,
-                           source extraSource: [String: JSONValue] = [:], allowDuplicate: Bool = false,
+                           source extraSource: [String: JSONValue] = [:], project: Ref? = nil, allowDuplicate: Bool = false,
                            progress: @escaping (String) -> Void = { _ in }) async throws -> ImportResult {
         let fm = FileManager.default
         progress("Fingerabdruck")
@@ -287,6 +287,7 @@ enum Importer {
                                 source: probe.loomnTake.map { ["loomnTake": $0] })
             attrs.apply(to: &r, catalog: catalog)
             if !extraSource.isEmpty { r.source = (r.source ?? [:]).merging(extraSource) { _, neu in neu } }
+            if let project { r.project = project }
 
             let dir = lib.paths.url(Naming.dayFolder(r.createdAt))
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
