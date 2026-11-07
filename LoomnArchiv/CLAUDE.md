@@ -41,4 +41,4 @@
 - Ersetzte Dateien oben mit **VERALTET … ersetzt durch …** markieren, nie stillschweigend liegen lassen.
 - Fügt LION einen Text aus einem anderen Tool ein: dessen Kopf mit dem aktuellen Stand vergleichen. Ist er alt
   oder schon umgesetzt, LION darauf hinweisen statt es nochmal umzusetzen.
-- Letzter bekannter Stand: archivn Update 148, LoomnAndocken Fassung 2, editn Build 60 (Übergabe editn Nr. 3, 20.10.2026; Teile 1–3 drin, Teil 4 „Startbildschirm“ noch offen).
+- Letzter bekannter Stand: archivn Update 158, LoomnAndocken Fassung 2, editn Build 101 (Übergabe editn Nr. 4 „Export direkt nach archivn“, 07.11.2026, umgesetzt; Antwort: `Export-nach-archivn-Antwort.md`). Davor: Übergabe editn Nr. 3 (Build 60), Teil 4 „Startbildschirm“ noch offen.
