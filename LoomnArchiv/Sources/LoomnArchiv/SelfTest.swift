@@ -312,11 +312,167 @@ enum SelfTest {
         try check((try Library.readManifest(copied)).schema == Manifest.schemaVersion && upN == 4, "Ältere Mediathek angehoben")
         try check(((try? fm.contentsOfDirectory(atPath: up.paths.backups.path)) ?? []).contains { $0.contains("vor-anhebung") },
                   "Sicherung vor dem Anheben")
+
+        try await lidar(dir)
+    }
+
+    // MARK: LiDAR (Tiefen-Takes aus Loomn Cam)
+
+    /// Eine Loomn-Box wie Loomn Cam 0.26 sie hinter die .mov hängt.
+    static func loomnBox(_ kind: String, _ body: Data) -> Data {
+        var d = Data([0, 0, 0, 1]) + Data("uuid".utf8)
+        var size = UInt64(40 + body.count).bigEndian
+        d += Data(bytes: &size, count: 8)
+        d += Data(LoomnDepth.uuid)
+        var k = Data(kind.utf8)
+        k += Data(repeating: 0, count: 8 - k.count)
+        return d + k + body
+    }
+
+    /// LDEP-Kopf: „LDEP“, Version, Breite, Höhe (Little Endian), dann Tiefendaten
+    static func ldep(_ w: Int, _ h: Int) -> Data {
+        var d = Data("LDEP".utf8)
+        for v in [1, w, h] { d += Data([UInt8(v & 0xff), UInt8(v >> 8)]) }
+        return d + Data(repeating: 7, count: 512)
+    }
+
+    static func append(_ data: Data, to url: URL) throws {
+        let fh = try FileHandle(forWritingTo: url)
+        defer { try? fh.close() }
+        try fh.seekToEnd()
+        try fh.write(contentsOf: data)
+    }
+
+    static func lidar(_ dir: URL) async throws {
+        print("LiDAR")
+        let fm = FileManager.default
+        let src = dir.appendingPathComponent("AirDrop", isDirectory: true)
+        let ssd = dir.appendingPathComponent("SSD-L", isDirectory: true)
+        try fm.createDirectory(at: src, withIntermediateDirectories: true)
+        try fm.createDirectory(at: ssd, withIntermediateDirectories: true)
+        func take(_ id: String) -> String {
+            #"{"format":"loomn.take","version":1,"takeId":"\#(id)","kind":"depth","run":"2026-11-07T17:15:00+01:00","depth":{"source":"lidar","width":256,"height":192,"lossless":{"container":"uuid-box","uuid":"6C6F6F6D-6E2D-7369-6465-636172000001","kind":"ldepth","format":"LDEP v1"}}}"#
+        }
+
+        // Neu (0.26): alles in einer .mov
+        let neu = src.appendingPathComponent("Loomn_2026-11-07_1715_Tiefe.mov")
+        try await makeVideo(neu, hue: 0.1, creation: "2026-11-07T17:15:00+01:00", loomnTake: false, take: take("TAKE-NEU"))
+        try append(loomnBox("ldepth", ldep(256, 192)) + loomnBox("obj", Data("v 0 0 0\n".utf8)) + loomnBox("zukunft", Data([1, 2, 3])), to: neu)
+        let neuSHA = try FileOps.sha256(neu)
+        let scan = LoomnDepth.scan(neu)
+        try check(scan.hasLossless && scan.depthWidth == 256 && scan.depthHeight == 192 && scan.kinds == ["ldepth", "obj", "zukunft"],
+                  "Loomn-Box ldepth in der .mov gefunden (256×192), unbekannte Art stört nicht")
+        let probeTake = await Probe.take(neu)
+        let info = LoomnDepth.inspect(neu, take: probeTake)
+        try check(info?.state == .lossless && info?.takeId == "TAKE-NEU", "Merkmal „Tiefe verlustfrei“, takeId gelesen")
+        let neuProbe = await Probe.load(neu)
+        try check(neuProbe.media.width == 320, "Video mit Boxen am Ende spielt normal (AVFoundation liest es)")
+
+        // Ohne Box (z. B. über Fotos/iCloud gekommen): nur Videospur, kein Fehler
+        let ohne = src.appendingPathComponent("Loomn_2026-11-07_1716_Tiefe.mov")
+        try await makeVideo(ohne, hue: 0.2, creation: "2026-11-07T17:16:00+01:00", loomnTake: false, take: take("TAKE-OHNE"))
+        let ohneTake = await Probe.take(ohne)
+        try check(LoomnDepth.inspect(ohne, take: ohneTake)?.state == .videoOnly, "Ohne Box und ohne .ldepth: „nur Videospur“")
+
+        // Abgeschnittene Box: kein Absturz, „Tiefe beschädigt“
+        let kaputt = src.appendingPathComponent("Loomn_2026-11-07_1717_Tiefe.mov")
+        try fm.copyItem(at: neu, to: kaputt)
+        let full = try Data(contentsOf: kaputt)
+        let cut = full.count - 600
+        try full.prefix(cut).write(to: kaputt)
+        try check(LoomnDepth.inspect(kaputt, take: nil)?.state == .damaged, "Abgeschnittene Box: „Tiefe beschädigt“, kein Absturz")
+        try Data([0, 0, 0, 1]).write(to: src.appendingPathComponent("muell.mov"))
+        try check(LoomnDepth.scan(src.appendingPathComponent("muell.mov")).boxes.isEmpty, "Unsinnige Datei: kein Absturz")
+
+        // Normale Videos sind kein LiDAR
+        let normal = src.appendingPathComponent("IMG_9000.mov")
+        try await makeVideo(normal, hue: 0.4, creation: nil, loomnTake: true)
+        let normalTake = await Probe.take(normal)
+        try check(LoomnDepth.inspect(normal, take: normalTake) == nil, "Normales Video ist kein LiDAR-Clip")
+
+        // Alter Take (vor 0.26): .mov mit .ldepth/.obj daneben
+        let alt = src.appendingPathComponent("Loomn_2026-10-01_1200_Tiefe.mov")
+        try await makeVideo(alt, hue: 0.5, creation: "2026-10-01T12:00:00+02:00", loomnTake: false, take: take("TAKE-ALT"))
+        try ldep(256, 192).write(to: alt.deletingPathExtension().appendingPathExtension("ldepth"))
+        try Data("v 1 1 1\n".utf8).write(to: alt.deletingPathExtension().appendingPathExtension("obj"))
+        let altTake = await Probe.take(alt)
+        try check(LoomnDepth.inspect(alt, take: altTake)?.state == .sidecar, "Alter Take: .ldepth daneben erkannt")
+        // Beides: Box in der .mov und Datei daneben
+        try ldep(256, 192).write(to: neu.deletingPathExtension().appendingPathExtension("ldepth"))
+        try check(LoomnDepth.inspect(neu, take: nil)?.redundant == ["ldepth"], "Box und .ldepth daneben: Datei als überzählig gemeldet")
+        try fm.removeItem(at: neu.deletingPathExtension().appendingPathExtension("ldepth"))
+
+        // Tiefen-Paket desselben Takes
+        let paket = src.appendingPathComponent("Loomn_2026-11-07_1715_Tiefen-Paket.zip")
+        let stage = dir.appendingPathComponent("paket", isDirectory: true)
+        try fm.createDirectory(at: stage, withIntermediateDirectories: true)
+        try Data(take("TAKE-NEU").utf8).write(to: stage.appendingPathComponent("take.json"))
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.currentDirectoryURL = stage
+        zip.arguments = ["-q", "-r", paket.path, "."]
+        try zip.run(); zip.waitUntilExit()
+        let found = FileOps.collectVideos([src])
+        try check(found.contains { $0.lastPathComponent == paket.lastPathComponent } && found.allSatisfy { !["ldepth", "obj"].contains($0.pathExtension) },
+                  "Tiefen-Paket wird angeboten, Begleitdateien nicht einzeln")
+        let pinfo = LoomnDepth.inspect(paket, take: nil)
+        try check(pinfo?.state == .package && pinfo?.takeId == "TAKE-NEU", "takeId aus take.json im Paket")
+
+        print("LiDAR importieren")
+        let lib = try Library.create(in: ssd)
+        var cat = await lib.currentCatalog()
+        let song = cat.songNamed("Tiefe")
+        try await lib.setCatalog(cat)
+        cat = await lib.currentCatalog()
+        let a = Attrs(kindID: Kind.raw, songIDs: [song.id], formatID: cat.formats[0].id, moodIDs: [cat.moods[0].id])
+        guard case .imported(let r) = try await Importer.importFile(neu, sha: nil, attrs: a, into: lib) else { throw Fail("LiDAR-Import") }
+        let copy = lib.paths.url(r.relPath)
+        try check(try FileOps.sha256(copy) == neuSHA && FileOps.size(copy) == FileOps.size(neu) && r.sha256 == neuSHA,
+                  "Kopie Byte für Byte gleich, Fingerabdruck über die ganze Datei (mit Boxen)")
+        try check(try FileOps.sha256(neu) == neuSHA, "Original unverändert")
+        try check(LoomnDepth.scan(copy).hasLossless, "Tiefe steckt auch in der Kopie")
+        let side = try Sidecar.read(Sidecar.url(forVideo: copy))
+        try check(side.isLiDAR && side.depth?.state == .lossless && side.depth?.width == 256 && side.depth?.companions.isEmpty == true
+                  && side.kind.id == Kind.raw, "Begleitdatei: RAW mit LiDAR, Tiefe verlustfrei, keine Begleitdateien")
+
+        guard case .imported(let ra) = try await Importer.importFile(alt, sha: nil, attrs: a, into: lib) else { throw Fail("Alter Take") }
+        let altCopy = lib.paths.url(ra.relPath)
+        let base = altCopy.deletingPathExtension()
+        try check(ra.depth?.state == .sidecar && ra.depth?.companions.map(\.ext) == ["ldepth", "obj"]
+                  && fm.fileExists(atPath: base.appendingPathExtension("ldepth").path) && fm.fileExists(atPath: base.appendingPathExtension("obj").path),
+                  "Alter Take: Begleitdateien mitkopiert, gleicher Name wie das Video")
+        try check(try FileOps.sha256(base.appendingPathExtension("ldepth")) == ra.depth?.companions.first?.sha256,
+                  "Begleitdatei geprüft kopiert")
+        var edited = ra
+        let umbenannt = cat.songNamed("Umbenannt")
+        try await lib.setCatalog(cat)
+        edited.songs = [umbenannt.ref]
+        let up = try await lib.update([edited])[0]
+        let newBase = lib.paths.url(up.relPath).deletingPathExtension()
+        try check(up.file != ra.file && fm.fileExists(atPath: newBase.appendingPathExtension("ldepth").path)
+                  && !fm.fileExists(atPath: base.appendingPathExtension("ldepth").path)
+                  && up.depth?.companions.first?.file == newBase.appendingPathExtension("ldepth").lastPathComponent,
+                  "Umbenennen nimmt die Begleitdateien mit")
+
+        // Gleiche Aufnahme: .mov und Paket
+        let all = try await lib.allRecords()
+        var draft = ImportDraft(urls: [paket], catalog: cat)
+        draft.update(draft.items[0].id) { $0.depth = pinfo }
+        draft.markSameTakes(archive: all)
+        try check(draft.items[0].sameTake != nil && draft.importable.isEmpty, "Paket zur .mov im Archiv: gleiche Aufnahme, .mov bevorzugt")
+        var filter = LibraryFilter()
+        filter.lidarOnly = true
+        let mixed = all + [{ var x = r; x.id = "normal"; x.source = nil; return x }()]
+        try check(filter.apply(mixed).count == 2 && filter.apply(mixed).allSatisfy(\.isLiDAR), "LiDAR-Symbol zeigt nur LiDAR-Clips")
+        filter.lidarOnly = false
+        filter.kindIDs = [Kind.raw]
+        try check(filter.apply(mixed).count == 3, "RAW zeigt alle, auch die LiDAR-Clips")
     }
 
     // MARK: Testvideos
 
-    static func makeVideo(_ url: URL, hue: Double, creation: String?, loomnTake: Bool, type: AVFileType = .mov) async throws {
+    static func makeVideo(_ url: URL, hue: Double, creation: String?, loomnTake: Bool, type: AVFileType = .mov,
+                          take: String? = nil) async throws {
         try? FileManager.default.removeItem(at: url)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let W = 320, H = 180, frames = 20
@@ -329,11 +485,11 @@ enum SelfTest {
             item.dataType = kCMMetadataBaseDataType_UTF8 as String
             meta.append(item)
         }
-        if loomnTake {
+        if loomnTake || take != nil {
             let item = AVMutableMetadataItem()
             item.keySpace = .quickTimeMetadata
             item.key = "de.loomn.take" as NSString
-            item.value = #"{"format":"loomn.take","version":1,"session":{"id":"TEST-SESSION","title":"Test"},"song":{"title":"Test Song / Nacht"}}"# as NSString
+            item.value = (take ?? #"{"format":"loomn.take","version":1,"session":{"id":"TEST-SESSION","title":"Test"},"song":{"title":"Test Song / Nacht"}}"#) as NSString
             item.dataType = kCMMetadataBaseDataType_UTF8 as String
             meta.append(item)
         }

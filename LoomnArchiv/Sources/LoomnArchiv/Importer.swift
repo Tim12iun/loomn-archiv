@@ -81,7 +81,8 @@ enum FileOps {
         return false
     }
 
-    /// Dateien und Ordner (rekursiv) zu einer Liste von Videos auflösen.
+    /// Dateien und Ordner (rekursiv) zu einer Liste von Videos auflösen (dazu Tiefen-Pakete aus Loomn Cam).
+    /// Begleitdateien alter Tiefen-Takes (.ldepth, .obj, .lmatte) zählen nicht extra, sie gehen mit ihrer .mov.
     static func collectVideos(_ urls: [URL]) -> [URL] {
         var out: [URL] = []
         let fm = FileManager.default
@@ -91,8 +92,8 @@ enum FileOps {
             if isDir.boolValue {
                 guard let en = fm.enumerator(at: u, includingPropertiesForKeys: [.isRegularFileKey],
                                              options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
-                for case let f as URL in en where isVideo(f) { out.append(f) }
-            } else if isVideo(u) {
+                for case let f as URL in en where isVideo(f) || LoomnDepth.isPackage(f) { out.append(f) }
+            } else if isVideo(u) || LoomnDepth.isPackage(u) {
                 out.append(u)
             }
         }
@@ -172,6 +173,17 @@ struct Probe {
     /// Take-Beschreibung aus Loomn Cam (`de.loomn.take`), falls vorhanden
     var loomnTake: JSONValue?
 
+    /// Nur die Take-Beschreibung (`de.loomn.take`) lesen, schnell, fürs Importfenster.
+    static func take(_ url: URL) async -> JSONValue? {
+        let meta = (try? await AVURLAsset(url: url).load(.metadata)) ?? []
+        for item in meta {
+            let key = (item.key as? String) ?? item.identifier?.rawValue ?? ""
+            if key.hasSuffix("de.loomn.take"), let s = try? await item.load(.stringValue),
+               let v = try? JSONDecoder().decode(JSONValue.self, from: Data(s.utf8)) { return v }
+        }
+        return nil
+    }
+
     static func load(_ url: URL) async -> Probe {
         let asset = AVURLAsset(url: url)
         var created: Date?
@@ -233,7 +245,7 @@ enum Importer {
     /// Kopiert ein Video in die Mediathek: Fingerabdruck, Duplikat-Prüfung, geprüfte Kopie in den
     /// Tagesordner, Begleitdatei, Index. Das Original bleibt unverändert.
     static func importFile(_ src: URL, sha knownSHA: String?, attrs: Attrs, into lib: Library,
-                           source extra: [String: JSONValue] = [:], allowDuplicate: Bool = false,
+                           source extraSource: [String: JSONValue] = [:], allowDuplicate: Bool = false,
                            progress: @escaping (String) -> Void = { _ in }) async throws -> ImportResult {
         let fm = FileManager.default
         progress("Fingerabdruck")
@@ -251,7 +263,22 @@ enum Importer {
                 throw FileOps.Failure("Nicht genug Platz auf der SSD für „\(src.lastPathComponent)“")
             }
             progress("Metadaten")
-            let probe = await Probe.load(src)
+            var probe = await Probe.load(src)
+            // LiDAR: Tiefe in der .mov (Loomn-Box), alte Begleitdateien daneben oder Tiefen-Paket.
+            // Nur lesen, die Datei bleibt Byte für Byte, wie sie ist.
+            let depth = LoomnDepth.inspect(src, take: probe.loomnTake)
+            if depth?.state == .package, probe.loomnTake == nil, let t = LoomnDepth.packageTake(src) {
+                probe.loomnTake = t
+                if probe.createdAtSource == "file", let run = t["run"]?.string, let d = Sidecar.parseDate(run) {
+                    probe.createdAt = d
+                    probe.createdAtSource = "loomnTake"
+                }
+            }
+            let companionURLs = depth?.state == .package ? [] : LoomnDepth.companions(of: src)
+            let extra = companionURLs.reduce(Int64(0)) { $0 + FileOps.size($1) }
+            if extra > 0, let free = FileOps.freeSpace(lib.root), free < size + extra + 512 * 1024 * 1024 {
+                throw FileOps.Failure("Nicht genug Platz auf der SSD für „\(src.lastPathComponent)“")
+            }
             let catalog = await lib.currentCatalog()
             var r = VideoRecord(id: Catalog.newID(), file: "", originalName: src.lastPathComponent, sha256: sha, size: size,
                                 createdAt: probe.createdAt, createdAtSource: probe.createdAtSource, importedAt: Date(),
@@ -259,18 +286,33 @@ enum Importer {
                                 media: probe.media,
                                 source: probe.loomnTake.map { ["loomnTake": $0] })
             attrs.apply(to: &r, catalog: catalog)
-            if !extra.isEmpty { r.source = (r.source ?? [:]).merging(extra) { _, neu in neu } }
+            if !extraSource.isEmpty { r.source = (r.source ?? [:]).merging(extraSource) { _, neu in neu } }
 
             let dir = lib.paths.url(Naming.dayFolder(r.createdAt))
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             let part = dir.appendingPathComponent(".\(r.id).part")
             progress("Kopieren und prüfen")
             try FileOps.copyVerified(src, to: part, sha: sha)
+            // Begleitdateien alter Tiefen-Takes: gleich behandelt (geprüfte Kopie, gleicher Name wie das Video)
+            var parts: [(part: URL, ext: String)] = []
             do {
-                let rec = try await lib.commit(part: part, record: r, ext: src.pathExtension)
+                if var d = depth {
+                    d.companions = []
+                    for c in companionURLs {
+                        let ext = c.pathExtension.lowercased()
+                        let csha = try FileOps.sha256(c)
+                        let cpart = dir.appendingPathComponent(".\(r.id).\(ext).part")
+                        try FileOps.copyVerified(c, to: cpart, sha: csha)
+                        parts.append((cpart, ext))
+                        d.companions.append(.init(ext: ext, originalName: c.lastPathComponent, sha256: csha, size: FileOps.size(c)))
+                    }
+                    r.depth = d
+                }
+                let rec = try await lib.commit(part: part, record: r, ext: src.pathExtension, companions: parts)
                 return .imported(rec)
             } catch {
                 try? fm.removeItem(at: part)
+                for p in parts { try? fm.removeItem(at: p.part) }
                 throw error
             }
         } catch {

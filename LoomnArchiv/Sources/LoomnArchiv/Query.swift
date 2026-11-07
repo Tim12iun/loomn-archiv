@@ -8,6 +8,8 @@ struct LibraryFilter: Equatable {
     var songIDs: Set<String> = []
     var noSong = false
     var kindIDs: Set<String> = []
+    /// Nur LiDAR-Clips (Symbol neben RAW)
+    var lidarOnly = false
     var formatIDs: Set<String> = []
     var moodIDs: Set<String> = []
     var tags: Set<String> = []
@@ -16,7 +18,7 @@ struct LibraryFilter: Equatable {
 
     var isEmpty: Bool { self == LibraryFilter() }
     var activeCount: Int {
-        [!text.trimmingCharacters(in: .whitespaces).isEmpty, !songIDs.isEmpty || noSong, !kindIDs.isEmpty,
+        [!text.trimmingCharacters(in: .whitespaces).isEmpty, !songIDs.isEmpty || noSong, !kindIDs.isEmpty || lidarOnly,
          !formatIDs.isEmpty, !moodIDs.isEmpty, !tags.isEmpty, from != nil || to != nil].filter { $0 }.count
     }
 
@@ -26,6 +28,7 @@ struct LibraryFilter: Equatable {
             if !ok { return false }
         }
         if !kindIDs.isEmpty, !kindIDs.contains(r.kind.id) { return false }
+        if lidarOnly, !r.isLiDAR { return false }
         if !formatIDs.isEmpty, !formatIDs.contains(r.format.id) { return false }
         if !moodIDs.isEmpty {
             let have = Set(r.moods.map(\.id))

@@ -237,7 +237,8 @@ struct SongPage: View {
                 }
                 HStack(spacing: DS.gap) {
                     KindFilter(kinds: c.visibleKinds, selected: $model.filter.kindIDs,
-                               counts: Dictionary(grouping: all, by: \.kind.id).mapValues(\.count))
+                               counts: Dictionary(grouping: all, by: \.kind.id).mapValues(\.count),
+                               lidar: $model.filter.lidarOnly, lidarCount: all.filter(\.isLiDAR).count)
                     Spacer(minLength: 0)
                     RowGridSwitch(grid: $grid)
                 }
@@ -309,9 +310,9 @@ struct SongPage: View {
                         Chip(title: m.name, state: model.filter.moodIDs.contains(m.id) ? .on : .off) { toggle(&model.filter.moodIDs, m.id) }
                     }
                 }
-                if !model.filter.formatIDs.isEmpty || !model.filter.moodIDs.isEmpty || !model.filter.text.isEmpty || !model.filter.kindIDs.isEmpty {
+                if !model.filter.formatIDs.isEmpty || !model.filter.moodIDs.isEmpty || !model.filter.text.isEmpty || !model.filter.kindIDs.isEmpty || model.filter.lidarOnly {
                     Chip(title: "zurücksetzen", icon: "xmark") {
-                        model.filter.formatIDs = []; model.filter.moodIDs = []; model.filter.text = ""; model.filter.kindIDs = []
+                        model.filter.formatIDs = []; model.filter.moodIDs = []; model.filter.text = ""; model.filter.kindIDs = []; model.filter.lidarOnly = false
                     }
                     .foregroundStyle(DS.dim)
                 }
@@ -389,6 +390,7 @@ struct VideoTile: View {
                     image(size: g.size)
                     HStack(spacing: 4) {
                         Badge(record.kind.name, tint: record.kind.id == Kind.final ? DS.accent : nil, small: compact)
+                        if let d = record.depth { DepthBadge(depth: d, small: compact) }
                         Spacer(minLength: 2)
                         if let d = record.media?.duration { Badge(d.clock, small: compact) }
                     }
@@ -536,7 +538,7 @@ struct FilterBar: View {
                 FilterMenu(title: "Song", summary: songSummary(c), active: !model.filter.songIDs.isEmpty || model.filter.noSong, flow: false) {
                     SongFilterList()
                 }
-                KindFilter(kinds: c.visibleKinds, selected: $model.filter.kindIDs)
+                KindFilter(kinds: c.visibleKinds, selected: $model.filter.kindIDs, lidar: $model.filter.lidarOnly)
                 FilterMenu(title: "Format", summary: names(model.filter.formatIDs, c.formats), active: !model.filter.formatIDs.isEmpty) {
                     ForEach(c.formats.sorted { $0.order < $1.order }) { f in
                         Chip(title: f.name, state: model.filter.formatIDs.contains(f.id) ? .on : .off) { toggle(&model.filter.formatIDs, f.id) }
@@ -887,6 +889,19 @@ struct Inspector: View {
                     line("Bild", "\(w)×\(h)" + (r.media?.fps.map { String(format: " · %.0f fps", $0) } ?? "") + (r.media?.codec.map { " · \($0)" } ?? ""))
                 }
                 line("Original", r.originalName)
+                if let d = r.depth {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("LiDAR").dsLabel().frame(width: 96, alignment: .leading)
+                        Image(systemName: d.symbol).font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(d.state == .damaged ? DS.accent : DS.text)
+                        Text(d.detail).font(DS.font(15)).lineLimit(2).textSelection(.enabled)
+                    }
+                    if !d.companions.isEmpty {
+                        let extra = d.redundant
+                        line("Begleitdateien", d.companions.map { "." + $0.ext }.joined(separator: ", ")
+                             + (extra.isEmpty ? "" : " (überzählig, steckt auch in der .mov)"))
+                    }
+                }
             }
             HStack(spacing: DS.gap) {
                 DragOutButton(url: model.url(r))
@@ -1065,5 +1080,21 @@ struct DragOutButton: View {
             return NSItemProvider(contentsOf: url) ?? NSItemProvider()
         }
         .help(available ? "Gedrückt halten und in eine andere App oder den Finder ziehen" : "Video nicht erreichbar (SSD angeschlossen?)")
+    }
+}
+
+/// Kleines LiDAR-Zeichen auf der Kachel neben der Art: Punktraster = Tiefe verlustfrei,
+/// leeres Raster = nur Videospur, Warndreieck = Tiefe beschädigt.
+struct DepthBadge: View {
+    var depth: DepthInfo
+    var small = false
+
+    var body: some View {
+        Image(systemName: depth.symbol)
+            .font(.system(size: small ? 9 : 11, weight: .bold))
+            .foregroundStyle(depth.state == .damaged ? DS.bg : DS.text)
+            .frame(width: small ? 17 : 22, height: small ? 17 : 22)
+            .background(depth.state == .damaged ? DS.accent : DS.surfaceHi, in: RoundedRectangle(cornerRadius: 4))
+            .help(depth.label)
     }
 }

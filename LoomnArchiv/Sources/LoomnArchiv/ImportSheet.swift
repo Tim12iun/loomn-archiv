@@ -210,6 +210,12 @@ struct ImportSheet: View {
         } else {
             Text("\(model.catalog.kind(item.attrs.kindID)?.name ?? "") · bereit").dsLabel()
         }
+        if let d = item.depth {
+            Image(systemName: d.symbol).font(.system(size: 11, weight: .bold))
+                .foregroundStyle(d.state == .damaged ? DS.accent : DS.dim)
+            Text("LiDAR · \(d.label)").dsLabel(d.state == .damaged ? DS.accent : DS.dim)
+        }
+        if let same = item.sameTake { Text("· \(same)").dsLabel() }
         // Nur ein Hinweis, das Video kommt trotzdem ins Archiv
         if item.duplicateOf != nil {
             Text("· schon im Archiv").dsLabel()

@@ -378,12 +378,31 @@ struct CompanionView: View {
             ForEach(model.catalog.visibleKinds) { k in
                 kindButton(k.name, on: filter.kindIDs.contains(k.id)) {
                     songMode = false
-                    if filter.kindIDs.contains(k.id) { filter.kindIDs.remove(k.id) } else { filter.kindIDs.insert(k.id) }
+                    if filter.kindIDs.contains(k.id) {
+                        filter.kindIDs.remove(k.id)
+                        if k.id == Kind.raw { filter.lidarOnly = false }
+                    } else { filter.kindIDs.insert(k.id) }
+                }
+                // LiDAR-Symbol direkt neben RAW: nur LiDAR-Clips (sie sind immer RAW)
+                if k.id == Kind.raw {
+                    Button {
+                        songMode = false
+                        filter.lidarOnly.toggle()
+                        if filter.lidarOnly { filter.kindIDs = [Kind.raw] }
+                    } label: {
+                        Image(systemName: LoomnDepth.symbol).font(.system(size: 12, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .foregroundStyle(filter.lidarOnly ? DS.bg : DS.text)
+                            .background(filter.lidarOnly ? DS.accent : DS.surface, in: DS.shape)
+                            .contentShape(DS.shape)
+                    }
+                    .buttonStyle(DSPress())
+                    .help("Nur LiDAR-Clips")
                 }
             }
             // SONG wählt alle anderen ab; nochmal klicken nimmt nur SONG wieder raus
             kindButton("Song", on: songMode) {
-                if !songMode { filter.kindIDs = [] }
+                if !songMode { filter.kindIDs = []; filter.lidarOnly = false }
                 openSongID = nil
                 songMode.toggle()
             }

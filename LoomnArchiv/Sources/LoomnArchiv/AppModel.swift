@@ -617,6 +617,18 @@ final class AppModel: ObservableObject {
             importDraft?.update(item.id) { $0.hashing = true }
             let url = item.url, id = item.id
             Task.detached(priority: .utility) {
+                // LiDAR zuerst (liest nur Köpfe), damit RAW + LiDAR sofort im Fenster steht
+                var take: JSONValue?
+                if !LoomnDepth.isPackage(url) { take = await Probe.take(url) }
+                let depth = LoomnDepth.inspect(url, take: take)
+                await MainActor.run {
+                    self.importDraft?.update(id) {
+                        $0.depth = depth
+                        // LiDAR-Clips sind immer RAW
+                        if depth != nil { $0.attrs.kindID = Kind.raw }
+                    }
+                    self.importDraft?.markSameTakes(archive: self.records)
+                }
                 let sha = try? FileOps.sha256(url)
                 let dup = sha != nil ? await library.duplicate(of: sha!) : nil
                 await MainActor.run {
@@ -821,6 +833,10 @@ struct ImportDraft {
         var duplicateOf: String?
         var batchDuplicate = false
         var attrs: Attrs
+        /// LiDAR-Take (Tiefe in der .mov, alte Begleitdateien oder Tiefen-Paket), nil = normales Video
+        var depth: DepthInfo?
+        /// Dieselbe Aufnahme (gleiche takeId) liegt schon als anderer Eintrag vor (nur Hinweis)
+        var sameTake: String?
 
         /// Nur ein Hinweis, blockiert nichts
         var isDuplicate: Bool { duplicateOf != nil || batchDuplicate }
@@ -860,6 +876,33 @@ struct ImportDraft {
         for i in items.indices {
             guard let sha = items[i].sha else { continue }
             items[i].batchDuplicate = !seen.insert(sha).inserted
+        }
+    }
+
+    /// .mov und `…_Tiefen-Paket.zip` desselben Takes (gleiche takeId) als dieselbe Aufnahme erkennen.
+    /// Vorschlag: ein Eintrag, die .mov (das vollständige Original). Das Paket wird abgewählt, nie gelöscht.
+    mutating func markSameTakes(archive: [VideoRecord]) {
+        for i in items.indices {
+            guard let take = items[i].depth?.takeId else { items[i].sameTake = nil; continue }
+            let isPackage = items[i].depth?.state == .package
+            let movInBatch = items.first { $0.id != items[i].id && $0.depth?.takeId == take && $0.depth?.state != .package }
+            let inArchive = archive.first { $0.takeID == take }
+            let wasMarked = items[i].sameTake != nil
+            if isPackage, let mov = movInBatch {
+                items[i].sameTake = "gleiche Aufnahme wie \(mov.url.lastPathComponent), die .mov reicht"
+                if !wasMarked { selection.remove(items[i].id) }
+            } else if let r = inArchive {
+                if isPackage, r.depth?.state != .package {
+                    items[i].sameTake = "gleiche Aufnahme schon im Archiv (\(r.file)), die .mov reicht"
+                    if !wasMarked { selection.remove(items[i].id) }
+                } else if !isPackage, r.depth?.state == .package {
+                    items[i].sameTake = "Paket dieser Aufnahme liegt im Archiv, die .mov ist das vollständige Original"
+                } else {
+                    items[i].sameTake = "gleiche Aufnahme schon im Archiv (\(r.file))"
+                }
+            } else {
+                items[i].sameTake = nil
+            }
         }
     }
 

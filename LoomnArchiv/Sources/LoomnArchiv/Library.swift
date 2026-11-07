@@ -314,15 +314,20 @@ actor Library {
     func release(_ sha: String) { pending.remove(sha) }
 
     /// Geprüfte Kopie (`part`) unter endgültigem Namen ablegen, Begleitdatei schreiben, Index eintragen.
-    func commit(part: URL, record draft: VideoRecord, ext: String) throws -> VideoRecord {
+    /// `companions`: geprüfte Kopien der Begleitdateien alter Tiefen-Takes, bekommen denselben Namen wie das Video.
+    func commit(part: URL, record draft: VideoRecord, ext: String, companions: [(part: URL, ext: String)] = []) throws -> VideoRecord {
         defer { pending.remove(draft.sha256) }
         let fm = FileManager.default
         let dir = part.deletingLastPathComponent()
         var r = draft
         var short = 4
         var name = Naming.fileName(record: r, shortID: String(r.id.prefix(short)), ext: ext)
-        while fm.fileExists(atPath: dir.appendingPathComponent(name).path)
-                || fm.fileExists(atPath: Sidecar.url(forVideo: dir.appendingPathComponent(name)).path) {
+        func taken(_ n: String) -> Bool {
+            let u = dir.appendingPathComponent(n)
+            return fm.fileExists(atPath: u.path) || fm.fileExists(atPath: Sidecar.url(forVideo: u).path)
+                || companions.contains { fm.fileExists(atPath: u.deletingPathExtension().appendingPathExtension($0.ext).path) }
+        }
+        while taken(name) {
             short += 2
             name = Naming.fileName(record: r, shortID: String(r.id.replacingOccurrences(of: "-", with: "").prefix(short)), ext: ext)
         }
@@ -330,13 +335,26 @@ actor Library {
         try fm.moveItem(at: part, to: final)
         r.file = name
         r.relPath = Self.relative(final, to: paths.root)
+        var moved: [URL] = []
         do {
+            if !companions.isEmpty, var d = r.depth {
+                for c in companions {
+                    let target = final.deletingPathExtension().appendingPathExtension(c.ext)
+                    try fm.moveItem(at: c.part, to: target)
+                    moved.append(target)
+                    if let i = d.companions.firstIndex(where: { $0.ext == c.ext && $0.file == nil }) {
+                        d.companions[i].file = target.lastPathComponent
+                    }
+                }
+                r.depth = d
+            }
             try Sidecar.write(r, to: Sidecar.url(forVideo: final))
             try index.upsert(r)
         } catch {
             // Halbe Einträge vermeiden: Video zurück in eine .part-Datei, damit kein Waise entsteht
             try? fm.removeItem(at: Sidecar.url(forVideo: final))
             try? fm.removeItem(at: final)
+            for u in moved { try? fm.removeItem(at: u) }
             throw error
         }
         return r
@@ -368,6 +386,19 @@ actor Library {
                     if fm.fileExists(atPath: oldSidecar.path) {
                         try? fm.moveItem(at: oldSidecar, to: Sidecar.url(forVideo: target))
                     }
+                    // Begleitdateien alter Tiefen-Takes wandern mit
+                    if var d = r.depth, !d.companions.isEmpty {
+                        for i in d.companions.indices {
+                            guard let f = d.companions[i].file else { continue }
+                            let old = dir.appendingPathComponent(f)
+                            let neu = target.deletingPathExtension().appendingPathExtension(d.companions[i].ext)
+                            if fm.fileExists(atPath: old.path), !fm.fileExists(atPath: neu.path),
+                               (try? fm.moveItem(at: old, to: neu)) != nil {
+                                d.companions[i].file = neu.lastPathComponent
+                            }
+                        }
+                        r.depth = d
+                    }
                     r.file = newName
                     r.relPath = Self.relative(target, to: paths.root)
                 }
@@ -392,6 +423,8 @@ actor Library {
         Dateiname: Datum_Uhrzeit_Art_Song_Kennung.endung
         Daneben je eine Begleitdatei <Name>.loomn.json mit allen Angaben
         (Art, Song, Format, Mood, Beschreibung, Tags, Notizen). Sie ist die Wahrheit.
+        LiDAR-Clips aus Loomn Cam tragen die Tiefe in der .mov selbst, bitte nie
+        umwandeln. Bei alten Takes liegen .ldepth/.obj/.lmatte mit gleichem Namen daneben.
 
     Songs/<Song>_<Kennung>/
         Die Audiodateien der Songs, unverändert, eine Datei je Version
