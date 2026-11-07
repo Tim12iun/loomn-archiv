@@ -122,7 +122,7 @@ enum LoomnDepth {
     private static func unzip(_ args: [String]) -> Data? {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        p.arguments = ["-qq"] + args
+        p.arguments = args   // -Z muss bei unzip die erste Option sein
         let out = Pipe()
         p.standardOutput = out
         p.standardError = FileHandle.nullDevice
